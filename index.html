@@ -130,7 +130,8 @@ const CFG_PREDEFINITA = {
 };
 
 const K = { cfg:"spese3-cfg", coda:"spese3-coda", storico:"spese3-storico", riep:"spese3-riepilogo",
-            abit:"spese3-abitudini", tax:"spese3-tassonomia" };
+            abit:"spese3-abitudini", tax:"spese3-tassonomia",
+            prat:"spese3-pratiche", cmd:"spese3-comandi" };
 const MESI = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
 
 /* ---------- memoria locale ---------- */
@@ -142,6 +143,8 @@ let coda = leggi(K.coda, []);        // spese non ancora accettate dal ponte
 let storico = leggi(K.storico, []);  // spese inviate, tenute per memoria locale
 let riepilogo = leggi(K.riep, null);
 let tassonomia = leggi(K.tax, null);
+let pratiche = leggi(K.prat, null);
+let comandi = leggi(K.cmd, []);     // istruzioni in attesa di partire per l'agente
 let statoAgente = null;
 let scheda = "nuova";
 
@@ -496,7 +499,7 @@ function interpreta(testo){
 /* Da alzare a ogni modifica. Compare in alto nell'intestazione e in Altro >
    Dati: è il modo immediato per sapere se il dispositivo sta usando la versione
    nuova o una copia rimasta in cache. */
-const VERSIONE = "3.1.1";
+const VERSIONE = "3.2.0";
 const VERSIONE_DATA = "25/10/2026";
 
 const PAUSA_FINE = 2500;   // silenzio dopo cui si considera finita la frase
@@ -627,9 +630,17 @@ async function sincronizza(silenzioso){
     statoAgente = await chiamaPonte("stato");
     const r = await chiamaPonte("riepilogo");
     if (r && r.voci) { riepilogo = r; scrivi(K.riep, r); }
+    if (comandi.length) {
+      const e2 = await chiamaPonte("comando", { comandi: comandi });
+      if (e2 && e2.ok) { comandi = []; scrivi(K.cmd, comandi); }
+    }
     try {   // la tassonomia non è indispensabile: senza, si ricade sui dati
       const x = await chiamaPonte("tassonomia");
       if (x && x.categorie && x.legami) { tassonomia = x; scrivi(K.tax, x); }
+    } catch(e) {}
+    try {
+      const pr = await chiamaPonte("pratiche");
+      if (pr && pr.pratiche) { pratiche = pr; scrivi(K.prat, pr); }
     } catch(e) {}
     disegna();
     return true;
@@ -661,7 +672,7 @@ function salvaSpesa(v){
    Schermate
    ========================================================================= */
 const TITOLI = { nuova:"Registra una spesa", registro:"Registro", mese:"Cruscotto",
-                 altro:"Impostazioni", voci:"Gestione voci" };
+                 altro:"Impostazioni", voci:"Gestione voci", rimborsi:"Rimborsi medici" };
 
 function disegna(){
   const s = document.getElementById("schermo");
@@ -681,6 +692,7 @@ function disegna(){
   if (scheda==="mese") schermoMese(s);
   if (scheda==="altro") schermoAltro(s);
   if (scheda==="voci") schermoVoci(s);
+  if (scheda==="rimborsi") schermoRimborsi(s);
   disegnaTabs();
   window.scrollTo(0,0);
 }
@@ -696,7 +708,8 @@ function disegnaTabs(){
   const c = document.getElementById("tabs"); c.innerHTML = "";
   Object.keys(nomi).forEach(k => {
     const b = document.createElement("button");
-    b.className = (scheda===k || (scheda==="voci" && k==="altro")) ? "on" : "";
+    const dentroAltro = (scheda==="voci" || scheda==="rimborsi") && k==="altro";
+    b.className = (scheda===k || dentroAltro) ? "on" : "";
     b.innerHTML = '<span style="position:relative"><svg viewBox="0 0 24 24">'+icone[k]+'</svg>'+
       (k==="registro" && coda.length ? '<span class="badge num">'+coda.length+'</span>' : '')+
       '</span><span>'+nomi[k]+'</span>';
@@ -1217,6 +1230,236 @@ function schermoVoci(s){
   document.getElementById("bannullatax").onclick = () => { scheda="altro"; disegna(); };
 }
 
+/* ---------- Rimborsi medici ----------
+   Il foglio "Richiesta Fasi&Generali" è il registro delle pratiche; il master
+   porta il netto a tuo carico. Qui si seguono gli stati e si registrano i
+   riscontri; la decurtazione nel master viene PROPOSTA e tu la confermi, perché
+   le due righe non si possono agganciare da sole: le date non coincidono
+   (fattura il 22/02, registrata il 28/02) e le descrizioni divergono. */
+let rimbFiltro = "da fare", rimbAperta = null, rimbPasso = null;
+
+const ORDINE_STATI = ["da richiedere","attesa FASI","da chiedere ad AON","attesa AON",
+                      "chiusa con residuo","chiusa","non richiedibile"];
+const DA_FARE = ["da richiedere","attesa FASI","da chiedere ad AON","attesa AON"];
+
+const giorniDa = (iso) => iso ? Math.round((Date.now() - new Date(iso).getTime())/86400000) : null;
+
+function nuovoComando(tipo, dati){
+  comandi.push({ id: "c"+Date.now()+"-"+Math.random().toString(36).slice(2,7),
+                 tipo: tipo, dati: dati, creatoIl: new Date().toISOString() });
+  scrivi(K.cmd, comandi);
+}
+
+/* Righe del master che potrebbero corrispondere a questa pratica: stessa
+   persona, sottocategoria Medico, importo capiente, data vicina. */
+function candidateMaster(p, daTogliere){
+  const d = (riepilogo && riepilogo.dettaglio) || [];
+  const mese = p.data ? +p.data.slice(5,7) : 0, anno = p.data ? +p.data.slice(0,4) : 0;
+  // Non si filtra per persona: capita che la pratica sia intestata a uno e la
+  // spesa sia registrata sotto l'altro. L'indizio forte è un altro — nel master
+  // quella riga deve valere quanto il residuo della pratica — e conta più della
+  // persona e della data.
+  const atteso = p.residuo;
+  return d.filter(x => x.sub === "Medico" && x.riga && x.valore >= daTogliere - 0.005)
+    .map(x => Object.assign({
+      scarto: Math.abs(x.valore - atteso),
+      distanza: Math.abs((x.anno - anno) * 12 + (x.mese - mese)),
+      stessaPersona: x.cat === p.chi ? 1 : 0
+    }, x))
+    .filter(x => x.distanza <= 2)
+    .sort((a,b) => (a.scarto - b.scarto) || (a.distanza - b.distanza)
+                || (b.stessaPersona - a.stessaPersona))
+    .slice(0, 6);
+}
+
+function schermoRimborsi(s){
+  if (!pratiche || !pratiche.pratiche) {
+    const v = document.createElement("section");
+    v.innerHTML = '<div class="avviso g">Non ho ancora le pratiche. Premi <b>Sincronizza</b> ' +
+      'in Impostazioni: l\'agente le pubblica leggendo il foglio delle richieste.</div>' +
+      '<button class="b ghost" id="btorna">Torna a Impostazioni</button>';
+    s.appendChild(v);
+    document.getElementById("btorna").onclick = () => { scheda="altro"; disegna(); };
+    return;
+  }
+  const tutte = pratiche.pratiche;
+  const perStato = {};
+  tutte.forEach(p => { (perStato[p.stato] = perStato[p.stato] || []).push(p); });
+
+  /* riepilogo e filtri */
+  const t = document.createElement("section");
+  const daFare = tutte.filter(p => DA_FARE.indexOf(p.stato) >= 0);
+  const inGioco = daFare.reduce((a,p) => a + (p.residuo||0), 0);
+  t.innerHTML = '<h2>Pratiche</h2>' +
+    '<div class="avviso '+(daFare.length?"g":"v")+'">' +
+      (daFare.length ? daFare.length+' pratiche richiedono una mossa, per '+euro(inGioco)+' ancora recuperabili.'
+                     : 'Nessuna pratica in sospeso.') + '</div>' +
+    '<div class="chips" id="filtri" style="margin-top:10px">' +
+      '<button class="chip'+(rimbFiltro==="da fare"?' on':'')+'" data-f="da fare">Da fare ('+daFare.length+')</button>' +
+      ORDINE_STATI.filter(x=>perStato[x]).map(x =>
+        '<button class="chip'+(rimbFiltro===x?' on':'')+'" data-f="'+x+'">'+x+' ('+perStato[x].length+')</button>'
+      ).join("") + '</div>';
+  s.appendChild(t);
+  t.querySelectorAll("[data-f]").forEach(b => b.onclick = () => {
+    rimbFiltro = b.dataset.f; rimbAperta = null; rimbPasso = null; disegna(); });
+
+  /* elenco */
+  let elenco = rimbFiltro === "da fare" ? daFare : (perStato[rimbFiltro] || []);
+  elenco = elenco.slice().sort((a,b) => (b.data||"").localeCompare(a.data||""));
+  const quante = Math.min(elenco.length, 40);
+
+  for (let i = 0; i < quante; i++) {
+    const p = elenco[i];
+    const sez = document.createElement("section");
+    const atteso = p.stato === "attesa FASI" ? giorniDa(p.fasiRichiesta)
+                 : p.stato === "attesa AON"  ? giorniDa(p.aonRichiesta) : null;
+    const vecchia = atteso !== null && atteso > 60;
+    let h = '<div data-apri="'+p.riga+'" style="cursor:pointer">' +
+      '<div class="riga" style="align-items:baseline">' +
+        '<b style="flex:1">'+p.cosa+'</b><div class="num">'+euro(p.valore)+'</div></div>' +
+      '<div class="mini">'+p.chi+' · '+(p.data?itData(p.data):"—")+' · '+p.stato +
+        (atteso!==null ? ' da <b'+(vecchia?' style="color:var(--red)"':'')+'>'+atteso+' giorni</b>' : '') +
+        (p.residuo > 0.005 ? ' · residuo '+euro(p.residuo) : '') + '</div></div>';
+
+    if (rimbAperta === p.riga) {
+      h += '<table style="margin-top:9px">' +
+        '<tr><td>Fattura</td><td class="r num">'+euro(p.valore)+'</td></tr>' +
+        (p.fasiRichiesta ? '<tr><td>FASI richiesto</td><td class="r">'+itData(p.fasiRichiesta)+'</td></tr>' : '') +
+        (p.fasiRiscontro ? '<tr><td>FASI ha dato</td><td class="r num">'+euro(p.fasiOttenuto||0)+' il '+itData(p.fasiRiscontro)+'</td></tr>' : '') +
+        (p.aonRichiesta ? '<tr><td>AON richiesto</td><td class="r">'+itData(p.aonRichiesta)+'</td></tr>' : '') +
+        (p.aonRiscontro ? '<tr><td>AON ha dato</td><td class="r num">'+euro(p.aonOttenuto||0)+' il '+itData(p.aonRiscontro)+'</td></tr>' : '') +
+        '<tr><td><b>Residuo a tuo carico</b></td><td class="r num"><b>'+euro(p.residuo)+'</b></td></tr></table>' +
+        (p.note ? '<div class="mini" style="margin-top:6px">Nota: '+p.note+'</div>' : '');
+
+      if (rimbPasso && rimbPasso.riga === p.riga) {
+        h += modulo(p, rimbPasso);
+      } else {
+        h += '<div class="riga" style="margin-top:10px;flex-wrap:wrap;gap:7px">';
+        if (p.stato === "da richiedere")
+          h += '<button class="b ghost" data-az="chiediFASI|'+p.riga+'">Richiesto a FASI</button>' +
+               '<button class="b ghost" data-az="nonRich|'+p.riga+'">Non richiedibile</button>';
+        if (p.stato === "attesa FASI")
+          h += '<button class="b ghost" data-az="rispFASI|'+p.riga+'">FASI ha risposto</button>';
+        if (p.stato === "da chiedere ad AON")
+          h += '<button class="b ghost" data-az="chiediAON|'+p.riga+'">Richiesto ad AON</button>';
+        if (p.stato === "attesa AON")
+          h += '<button class="b ghost" data-az="rispAON|'+p.riga+'">AON ha risposto</button>';
+        h += '</div>';
+      }
+    }
+    sez.innerHTML = h;
+    s.appendChild(sez);
+  }
+  if (elenco.length > quante) {
+    const p = document.createElement("section");
+    p.innerHTML = '<div class="mini">Mostrate le '+quante+' più recenti di '+elenco.length+'.</div>';
+    s.appendChild(p);
+  }
+
+  const fondo = document.createElement("section");
+  fondo.innerHTML =
+    (comandi.length ? '<div class="avviso g">'+comandi.length+' modifiche pronte da inviare: ' +
+      'premi Sincronizza in Impostazioni.</div>' : '') +
+    '<button class="b ghost" id="bindietro">Torna a Impostazioni</button>';
+  s.appendChild(fondo);
+
+  /* comportamenti */
+  s.querySelectorAll("[data-apri]").forEach(e => e.onclick = () => {
+    const r = +e.dataset.apri;
+    rimbAperta = (rimbAperta === r) ? null : r; rimbPasso = null; disegna(); });
+  s.querySelectorAll("[data-az]").forEach(e => e.onclick = () => {
+    const [az, riga] = e.dataset.az.split("|");
+    const p = tutte.find(x => x.riga === +riga);
+    if (az === "nonRich") {
+      nuovoComando("pratica_aggiorna", { riga:p.riga, attesoValore:p.valore,
+                                         campi:{ richiedibile:false } });
+      p.stato = "non richiedibile";
+      avviso("Segnata come non richiedibile"); disegna(); return;
+    }
+    rimbPasso = { riga:p.riga, az:az, data:oggiISO(), importo:"" };
+    disegna();
+  });
+  s.querySelectorAll("[data-conferma]").forEach(e => e.onclick = () => confermaPasso(tutte));
+  s.querySelectorAll("[data-annulla]").forEach(e => e.onclick = () => { rimbPasso = null; disegna(); });
+  s.querySelectorAll("[data-decurta]").forEach(e => e.onclick = () => {
+    const [riga, atteso, nuovo] = e.dataset.decurta.split("|");
+    nuovoComando("master_decurta", { riga:+riga, atteso:+atteso, nuovo:+nuovo });
+    avviso("Decurtazione in coda: parte alla prossima sincronizzazione");
+    rimbPasso = null; disegna();
+  });
+  const ind = document.getElementById("bindietro");
+  if (ind) ind.onclick = () => { scheda="altro"; rimbPasso=null; disegna(); };
+  const cd = document.getElementById("rb-data"); if (cd) cd.onchange = () => rimbPasso.data = cd.value;
+  const ci = document.getElementById("rb-imp");  if (ci) ci.oninput  = () => rimbPasso.importo = ci.value;
+}
+
+function modulo(p, passo){
+  const chiede = (passo.az === "chiediFASI" || passo.az === "chiediAON");
+  const ente = (passo.az.indexOf("FASI") >= 0) ? "FASI" : "AON";
+  const titolo = chiede ? "Richiesta inviata a " + ente : ente + " ha risposto";
+  const suggerito = chiede ? p.residuo : "";
+  let h = '<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">' +
+    '<b>'+titolo+'</b>' +
+    '<div class="riga" style="margin-top:8px">' +
+      '<div class="campo"><label>DATA</label><input type="date" id="rb-data" value="'+passo.data+'"></div>' +
+      '<div class="campo"><label>'+(chiede?"IMPORTO RICHIESTO":"IMPORTO OTTENUTO")+'</label>' +
+        '<input id="rb-imp" class="num" inputmode="decimal" placeholder="'+
+        (chiede?String(suggerito).replace(".",","):"0 se non hanno dato niente")+'" value="'+passo.importo+'"></div>' +
+    '</div>';
+  if (passo.decurta) {
+    const c = passo.decurta;
+    h += '<div class="avviso g" style="margin-top:4px">Ora vanno tolti <b>'+euro(c.importo)+
+         '</b> dal master. Quale riga?</div>';
+    if (!c.candidate.length) {
+      h += '<div class="mini">Nessuna riga Medico abbastanza capiente nei mesi vicini. ' +
+           'Falla a mano in Excel.</div>';
+    } else {
+      c.candidate.forEach(x => {
+        const nuovo = Math.round((x.valore - c.importo)*100)/100;
+        h += '<button class="b ghost" style="margin-top:6px;text-align:left" data-decurta="' +
+             x.riga+'|'+x.valore+'|'+nuovo+'">' + itData(x.data)+' · '+euro(x.valore)+
+             ' → <b>'+euro(nuovo)+'</b><br><span class="mini">'+(x.desc||"senza descrizione")+'</span></button>';
+      });
+    }
+    h += '<button class="b ghost" style="margin-top:8px" data-annulla="1">Non decurtare ora</button>';
+  } else {
+    h += '<div class="riga" style="margin-top:8px">' +
+         '<button class="b" data-conferma="1">Conferma</button>' +
+         '<button class="b ghost" data-annulla="1">Annulla</button></div>';
+  }
+  return h + '</div>';
+}
+
+function confermaPasso(tutte){
+  const p = tutte.find(x => x.riga === rimbPasso.riga);
+  const chiede = (rimbPasso.az === "chiediFASI" || rimbPasso.az === "chiediAON");
+  const fasi = rimbPasso.az.indexOf("FASI") >= 0;
+  let imp = importoDaTesto(rimbPasso.importo);
+  if (chiede && imp === null) imp = p.residuo;
+  if (imp === null) { avviso("Scrivi l'importo, anche 0", true); return; }
+  if (imp > p.valore + 0.005) { avviso("L'importo supera la fattura", true); return; }
+
+  const campi = {};
+  if (chiede) {
+    campi[fasi ? "fasiRichiesta" : "aonRichiesta"] = rimbPasso.data;
+    campi[fasi ? "fasiValore"    : "aonValore"]    = imp;
+  } else {
+    campi[fasi ? "fasiRiscontro" : "aonRiscontro"] = rimbPasso.data;
+    campi[fasi ? "fasiOttenuto"  : "aonOttenuto"]  = imp;
+  }
+  nuovoComando("pratica_aggiorna", { riga:p.riga, attesoValore:p.valore, campi:campi });
+
+  if (!chiede && imp > 0) {
+    // un rimborso incassato va tolto dal master: si propongono le righe candidate
+    rimbPasso.decurta = { importo: imp, candidate: candidateMaster(p, imp) };
+    avviso("Pratica aggiornata. Ora scegli la riga da decurtare");
+  } else {
+    rimbPasso = null;
+    avviso("Pratica aggiornata: parte alla prossima sincronizzazione");
+  }
+  disegna();
+}
+
 function schermoAltro(s){
   /* stato agente */
   const a = document.createElement("section");
@@ -1250,11 +1493,18 @@ function schermoAltro(s){
     '</table>' +
     '<button class="b ghost" style="margin-top:10px" id="bvoci">Gestione voci</button>' +
     '<div class="mini" style="margin-top:6px">Categorie, sottocategorie e combinazioni ammesse.</div>' +
+    '<button class="b ghost" style="margin-top:10px" id="brimb">Rimborsi medici' +
+      (pratiche && pratiche.pratiche
+        ? ' ('+pratiche.pratiche.filter(p=>DA_FARE.indexOf(p.stato)>=0).length+' da fare)' : '') +
+      '</button>' +
+    '<div class="mini" style="margin-top:6px">Pratiche FASI e AON, con i giorni di attesa.</div>' +
     '<div class="riga" style="margin-top:10px">' +
     '<button class="b ghost" id="bback">Scarica copia</button>' +
     '<button class="b ghost" id="bsvuota" style="color:var(--red)">Svuota coda</button></div>';
   s.appendChild(d);
   document.getElementById("bvoci").onclick = () => { scheda = "voci"; disegna(); };
+  document.getElementById("brimb").onclick = () => {
+    scheda = "rimborsi"; rimbPasso = null; rimbAperta = null; disegna(); };
   document.getElementById("bback").onclick = () => {
     const blob = new Blob([JSON.stringify({coda, storico, cfg:CFG}, null, 1)], {type:"application/json"});
     const u = URL.createObjectURL(blob); const link = document.createElement("a");
