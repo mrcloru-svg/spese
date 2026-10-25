@@ -499,7 +499,7 @@ function interpreta(testo){
 /* Da alzare a ogni modifica. Compare in alto nell'intestazione e in Altro >
    Dati: è il modo immediato per sapere se il dispositivo sta usando la versione
    nuova o una copia rimasta in cache. */
-const VERSIONE = "3.2.0";
+const VERSIONE = "3.2.1";
 const VERSIONE_DATA = "25/10/2026";
 
 const PAUSA_FINE = 2500;   // silenzio dopo cui si considera finita la frase
@@ -1344,6 +1344,13 @@ function schermoRimborsi(s){
           h += '<button class="b ghost" data-az="chiediAON|'+p.riga+'">Richiesto ad AON</button>';
         if (p.stato === "attesa AON")
           h += '<button class="b ghost" data-az="rispAON|'+p.riga+'">AON ha risposto</button>';
+        // Ci si può fermare in qualunque momento: spesso il residuo è il bollo
+        // da due euro, che non vale la pratica per recuperarlo.
+        if (DA_FARE.indexOf(p.stato) >= 0 && p.stato !== "da richiedere")
+          h += '<button class="b ghost" data-az="chiudi|'+p.riga+'">Chiudi qui'+
+               (p.residuo>0.005 ? ' ('+euro(p.residuo)+' a carico)' : '')+'</button>';
+        if (p.stato === "non richiedibile" || p.stato === "chiusa con residuo")
+          h += '<button class="b ghost" data-az="riapri|'+p.riga+'">Riapri</button>';
         h += '</div>';
       }
     }
@@ -1370,11 +1377,15 @@ function schermoRimborsi(s){
   s.querySelectorAll("[data-az]").forEach(e => e.onclick = () => {
     const [az, riga] = e.dataset.az.split("|");
     const p = tutte.find(x => x.riga === +riga);
-    if (az === "nonRich") {
+    const manuali = { nonRich:["No","non richiedibile","Segnata come non richiedibile"],
+                      chiudi:["Chiusa","chiusa con residuo","Pratica chiusa: il residuo resta a tuo carico"],
+                      riapri:[null,"da richiedere","Pratica riaperta"] };
+    if (manuali[az]) {
+      const [valore, stato, messaggio] = manuali[az];
       nuovoComando("pratica_aggiorna", { riga:p.riga, attesoValore:p.valore,
-                                         campi:{ richiedibile:false } });
-      p.stato = "non richiedibile";
-      avviso("Segnata come non richiedibile"); disegna(); return;
+                                         campi:{ statoManuale: valore } });
+      p.stato = stato;           // si aggiorna subito, senza aspettare l'agente
+      avviso(messaggio); disegna(); return;
     }
     rimbPasso = { riga:p.riga, az:az, data:oggiISO(), importo:"" };
     disegna();
