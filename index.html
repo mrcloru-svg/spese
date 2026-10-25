@@ -332,15 +332,17 @@ function parolaNumero(w){
   return null;
 }
 
-/* "centotrentatré e cinquanta" → 133,50 · "settantacinque zero uno" → 75,01 */
+/* "centotrentatré e cinquanta" → 133,50 · "settantacinque zero uno" → 75,01
+   "centotrentatré euro cinquanta centesimi" → 133,50 */
 function numeroDaParole(testo){
-  const SEP = {e:1,ed:1,virgola:1,con:1};
+  const SEP  = {e:1,ed:1,virgola:1,con:1,euro:1};              // legano euro e centesimi
+  const CENT = {centesimi:1,centesimo:1,cent:1,cents:1};       // dichiarano i centesimi
   const p = senzaAccenti(testo.toLowerCase()).replace(/[^a-z ]/g," ").split(/\s+/).filter(Boolean);
   const gruppi = []; let corrente = null, separato = false;
   for (const w of p){
     const v = parolaNumero(w);
-    if (v !== null) { if (!corrente) corrente = {cifre:[v], sep:separato}; else corrente.cifre.push(v); separato = false; }
-    else { if (corrente) { gruppi.push(corrente); corrente = null; } separato = !!SEP[w]; }
+    if (v !== null) { if (!corrente) corrente = {cifre:[v], sep:separato, dopo:""}; else corrente.cifre.push(v); separato = false; }
+    else { if (corrente) { corrente.dopo = w; gruppi.push(corrente); corrente = null; } separato = !!SEP[w]; }
   }
   if (corrente) gruppi.push(corrente);
   if (!gruppi.length) return null;
@@ -354,12 +356,16 @@ function numeroDaParole(testo){
     return c.reduce((a,b)=>a+b,0);
   };
 
+  if (gruppi.length === 1 && CENT[gruppi[0].dopo])            // "cinquanta centesimi"
+    return Math.round(valore(gruppi[0]))/100;
+
   let tot = valore(gruppi[0]);
   for (let i=1;i<gruppi.length;i++){
-    const v = valore(gruppi[i]);
-    if (gruppi[i].sep && v < 100)      tot = tot + v/100;   // "e cinquanta" → centesimi
-    else if (gruppi[i].sep && v < tot) tot = tot + v;       // "mille e duecento"
-    else                               tot = Math.max(tot, v);
+    const g = gruppi[i], v = valore(g);
+    const sonoCentesimi = (CENT[g.dopo] || g.sep) && v < 100;
+    if (sonoCentesimi)            tot = tot + v/100;        // "e cinquanta", "cinquanta centesimi"
+    else if (g.sep && v < tot)    tot = tot + v;            // "mille e duecento"
+    else                          tot = Math.max(tot, v);
   }
   return Math.round(tot*100)/100;
 }
@@ -368,11 +374,13 @@ function interpreta(testo){
   const r = { valore:null, data:oggiISO(), categoria:"", sottocategoria:"", pagamento:"",
               descrizione:testo.trim(), inout:"Out", quotaTicket:null };
 
-  // euro e centesimi dettati staccati: "133 50 euro", "133 e 50 euro", "133 virgola 50"
+  // euro e centesimi dettati staccati: "133 50 euro", "133 e 50 euro",
+  // "133 euro 50 centesimi", "133 virgola 50"
   let presoInCifre = false;
   if (!/ticket|buoni pasto/.test(t)) {
-    const sp = t.match(/\b(\d{1,6})\s+(?:e\s+|virgola\s+)?(\d{2})\s*(?:€|euro)\b/);
-    if (sp) { r.valore = parseFloat(sp[1] + "." + sp[2]); presoInCifre = true; }
+    const sp = t.match(/\b(\d{1,6})\s*(?:€|euro)\s+(\d{1,2})\s*cent/)
+            || t.match(/\b(\d{1,6})\s+(?:e\s+|virgola\s+)?(\d{2})\s*(?:€|euro)\b/);
+    if (sp) { r.valore = parseFloat(sp[1] + "." + String(sp[2]).padStart(2,"0")); presoInCifre = true; }
   }
   // importo in cifre: 60,86 / 60.86 / 60
   const cifre = presoInCifre ? null : t.match(/(\d+[.,]\d{1,2}|\d+)\s*(?:€|euro)?/g);
@@ -438,7 +446,7 @@ function interpreta(testo){
 /* Da alzare a ogni modifica. Compare in alto nell'intestazione e in Altro >
    Dati: è il modo immediato per sapere se il dispositivo sta usando la versione
    nuova o una copia rimasta in cache. */
-const VERSIONE = "3.0.3";
+const VERSIONE = "3.0.4";
 const VERSIONE_DATA = "25/10/2026";
 
 const PAUSA_FINE = 2500;   // silenzio dopo cui si considera finita la frase
@@ -457,6 +465,25 @@ function vocaleDisponibile(){
          ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
 }
 function azzeraTimer(){ clearTimeout(timerSilenzio); clearTimeout(timerMax); timerSilenzio = timerMax = null; }
+
+/* Fonde due pezzi di trascrizione riconoscendo la sovrapposizione. Serve perché
+   i motori vocali non si comportano allo stesso modo: su PC mandano la frase che
+   cresce, su Android rimandano spesso lo stesso pezzo già definitivo, e a ogni
+   riavvio della sessione ripetono l'ultima parola. Concatenare produrrebbe
+   "ristorante ristorante ristorante"; fondere no. */
+function unisci(a, b){
+  a = (a||"").trim(); b = (b||"").trim();
+  if (!a) return b;
+  if (!b) return a;
+  const A = a.toLowerCase(), B = b.toLowerCase();
+  if (B.startsWith(A)) return b;          // b contiene già tutto a
+  if (A.endsWith(B))   return a;          // b è già in coda ad a
+  if (A.includes(B))   return a;          // ripetizione interna
+  for (let n = Math.min(A.length, B.length); n > 2; n--) {
+    if (A.slice(A.length - n) === B.slice(0, n)) return a + b.slice(n);
+  }
+  return a + " " + b;
+}
 function fermaDettatura(){
   chiusuraVoluta = true; inAscolto = false; azzeraTimer();
   try { if (riconoscitore) riconoscitore.stop(); } catch(e){}
@@ -487,10 +514,10 @@ function avviaDettatura(mentreParla, allaFine, suErrore){
       let finali = "", provvisorio = "";
       for (let i = 0; i < ev.results.length; i++) {
         const t = ev.results[i][0].transcript;
-        if (ev.results[i].isFinal) finali += t + " "; else provvisorio += t;
+        if (ev.results[i].isFinal) finali = unisci(finali, t); else provvisorio = unisci(provvisorio, t);
       }
       sessione = finali;
-      mentreParla((testoBase + sessione + provvisorio).trim());
+      mentreParla(unisci(unisci(testoBase, sessione), provvisorio));
       rimandaChiusura();   // il conto alla rovescia riparte a ogni parola
     };
 
@@ -507,11 +534,11 @@ function avviaDettatura(mentreParla, allaFine, suErrore){
       // Il browser chiude la sessione anche da solo: se non è stata una
       // chiusura voluta, si riparte senza perdere quanto già detto.
       if (!chiusuraVoluta && inAscolto) {
-        testoBase = (testoBase + sessione);   // si mette al sicuro e si riparte puliti
+        testoBase = unisci(testoBase, sessione);   // si mette al sicuro e si riparte puliti
         sessione = "";
         try { riconoscitore.start(); return; } catch(e){}
       }
-      inAscolto = false; azzeraTimer(); allaFine((testoBase + sessione).trim());
+      inAscolto = false; azzeraTimer(); allaFine(unisci(testoBase, sessione));
     };
 
     riconoscitore.start();
