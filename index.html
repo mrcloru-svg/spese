@@ -499,7 +499,7 @@ function interpreta(testo){
 /* Da alzare a ogni modifica. Compare in alto nell'intestazione e in Altro >
    Dati: è il modo immediato per sapere se il dispositivo sta usando la versione
    nuova o una copia rimasta in cache. */
-const VERSIONE = "3.2.1";
+const VERSIONE = "3.4.0";
 const VERSIONE_DATA = "25/10/2026";
 
 const PAUSA_FINE = 2500;   // silenzio dopo cui si considera finita la frase
@@ -660,12 +660,26 @@ function avviso(testo, errore){
   clearTimeout(timerToast); timerToast = setTimeout(()=>{ t.remove(); }, 3000);
 }
 
+/* Nel foglio delle pratiche la colonna "Cosa" è corta — "Endocrinologo",
+   "Farmacia (asma)" — mentre la frase dettata contiene anche importo e persona.
+   Qui si toglie quel rumore e resta la prestazione. */
+function descrizionePratica(desc, chi){
+  let t = (desc || "").trim();
+  if (chi) t = t.replace(new RegExp("\\b" + chi + "\\b", "gi"), " ");
+  t = t.replace(/\d+[.,]?\d*\s*(€|euro|centesimi)?/gi, " ")
+       .replace(/\b(per|di cui|col|con il|con|ticket restaurant|ticket|spesa|pagato|segna)\b/gi, " ")
+       .replace(/\s{2,}/g, " ").replace(/^[\s,.;:+-]+|[\s,.;:+-]+$/g, "");
+  if (!t) return "Spesa medica";
+  return (t.charAt(0).toUpperCase() + t.slice(1)).slice(0, 60);
+}
+
 /* ---------- salvataggio di una spesa ---------- */
 function salvaSpesa(v){
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
   coda.push(Object.assign({ id, creatoIl:new Date().toISOString(), origine: window.innerWidth<700?"telefono":"pc" }, v));
   cacheDescrizioni = null;
   scrivi(K.coda, coda);
+  return id;
 }
 
 /* =========================================================================
@@ -748,8 +762,38 @@ function schermoPrimoAvvio(s){
 
 /* ---------- NUOVA ---------- */
 let bozza = null;
+let pratica = null;    // spesa medica appena salvata, in attesa della tua scelta
+
 function schermoNuova(s){
   const cats = categorie();
+
+  /* Una spesa medica è appena stata salvata: va comunque nel foglio delle
+     pratiche, anche se non si potrà chiedere niente a nessuno. Qui si decide
+     soltanto quale delle due cose è. */
+  if (pratica) {
+    const d = document.createElement("section");
+    d.innerHTML = '<h2>Rimborso</h2>' +
+      '<div class="avviso v">Salvata: <b>'+pratica.cosa+'</b> · '+euro(pratica.valore)+' · '+pratica.chi+'</div>' +
+      '<div class="mini" style="margin-top:8px">La metto nel foglio delle pratiche mediche. ' +
+      'Si può chiedere il rimborso?</div>' +
+      '<button class="b" style="margin-top:10px" id="pSi">Sì, da richiedere a FASI</button>' +
+      '<button class="b ghost" style="margin-top:8px" id="pNo">No, non richiedibile</button>' +
+      '<div class="mini" style="margin-top:10px;text-align:center">' +
+        '<a href="#" id="pNiente" style="color:var(--mute)">non creare la pratica</a></div>';
+    s.appendChild(d);
+    const crea = (richiedibile) => {
+      nuovoComando("pratica_nuova", Object.assign({ richiedibile: richiedibile }, pratica));
+      avviso(richiedibile ? "Pratica aperta: da richiedere a FASI"
+                          : "Registrata fra le spese non richiedibili");
+      pratica = null; disegna();
+    };
+    document.getElementById("pSi").onclick = () => crea(true);
+    document.getElementById("pNo").onclick = () => crea(false);
+    document.getElementById("pNiente").onclick = (ev) => {
+      ev.preventDefault(); pratica = null; disegna(); };
+    return;
+  }
+
   if (!bozza) bozza = { valore:"", categoria:"", sottocategoria:"", data:oggiISO(),
                         pagamento:"", descrizione:"", inout:"Out", split:false, ticket:"" };
 
@@ -876,14 +920,21 @@ function schermoNuova(s){
     const base = { data:bozza.data, categoria:bozza.categoria, sottocategoria:bozza.sottocategoria,
                    inout:bozza.inout, descrizione:bozza.descrizione.trim() };
     const tk = importoDaTesto(bozza.ticket);
+    let idSpesa = null;
     if (bozza.split && tk!==null && tk>0 && tk<v) {
       salvaSpesa(Object.assign({}, base, { valore:tk, pagamento:"Ticket Restaurant" }));
-      salvaSpesa(Object.assign({}, base, { valore:Math.round((v-tk)*100)/100,
+      idSpesa = salvaSpesa(Object.assign({}, base, { valore:Math.round((v-tk)*100)/100,
         pagamento: bozza.pagamento==="Ticket Restaurant" ? "Visa" : bozza.pagamento }));
       avviso("Salvate 2 righe");
     } else {
-      salvaSpesa(Object.assign({}, base, { valore:v, pagamento:bozza.pagamento }));
+      idSpesa = salvaSpesa(Object.assign({}, base, { valore:v, pagamento:bozza.pagamento }));
       avviso("Spesa salvata");
+    }
+    // Ogni spesa medica va anche nel foglio delle pratiche, comprese quelle
+    // che non si possono chiedere a nessuno: resta da stabilire solo questo.
+    if (bozza.sottocategoria === "Medico") {
+      pratica = { chi: bozza.categoria, cosa: descrizionePratica(bozza.descrizione, bozza.categoria),
+                  data: bozza.data, valore: v, rif: idSpesa };
     }
     bozza = null; disegna();
     sincronizza(true);
@@ -1244,6 +1295,24 @@ const DA_FARE = ["da richiedere","attesa FASI","da chiedere ad AON","attesa AON"
 
 const giorniDa = (iso) => iso ? Math.round((Date.now() - new Date(iso).getTime())/86400000) : null;
 
+const GIORNI_TROPPI = 60;   // oltre questa attesa la pratica va sollecitata
+
+/* Il colore non dice lo stato ma DI CHI È LA PALLA: oro quando tocca a te,
+   blu quando stai aspettando una risposta, rosso quando la aspetti da troppo.
+   Così l'oro è la lista delle cose da fare e il rosso quella dei solleciti. */
+function coloreStato(p){
+  if (p.stato === "da richiedere" || p.stato === "da chiedere ad AON")
+    return { c:"var(--gold)", n:"tocca a te" };
+  if (p.stato === "attesa FASI" || p.stato === "attesa AON") {
+    const g = giorniDa(p.stato === "attesa FASI" ? p.fasiRichiesta : p.aonRichiesta);
+    return (g !== null && g > GIORNI_TROPPI)
+      ? { c:"var(--red)",  n:"da sollecitare" }
+      : { c:"var(--navy)", n:"stanno rispondendo" };
+  }
+  if (p.stato === "chiusa") return { c:"var(--green)", n:"recuperato tutto" };
+  return { c:"var(--line)", n:"niente da fare" };
+}
+
 function nuovoComando(tipo, dati){
   comandi.push({ id: "c"+Date.now()+"-"+Math.random().toString(36).slice(2,7),
                  tipo: tipo, dati: dati, creatoIl: new Date().toISOString() });
@@ -1254,6 +1323,12 @@ function nuovoComando(tipo, dati){
    persona, sottocategoria Medico, importo capiente, data vicina. */
 function candidateMaster(p, daTogliere){
   const d = (riepilogo && riepilogo.dettaglio) || [];
+  // Pratica nata insieme alla spesa: la riga è nota, non c'è niente da cercare.
+  if (p.rigaMaster) {
+    const esatta = d.find(x => x.riga === p.rigaMaster);
+    if (esatta && esatta.valore >= daTogliere - 0.005)
+      return [Object.assign({ certa:true }, esatta)];
+  }
   const mese = p.data ? +p.data.slice(5,7) : 0, anno = p.data ? +p.data.slice(0,4) : 0;
   // Non si filtra per persona: capita che la pratica sia intestata a uno e la
   // spesa sia registrata sotto l'altro. L'indizio forte è un altro — nel master
@@ -1298,7 +1373,15 @@ function schermoRimborsi(s){
       '<button class="chip'+(rimbFiltro==="da fare"?' on':'')+'" data-f="da fare">Da fare ('+daFare.length+')</button>' +
       ORDINE_STATI.filter(x=>perStato[x]).map(x =>
         '<button class="chip'+(rimbFiltro===x?' on':'')+'" data-f="'+x+'">'+x+' ('+perStato[x].length+')</button>'
-      ).join("") + '</div>';
+      ).join("") + '</div>' +
+    /* legenda: il colore a sinistra di ogni pratica dice di chi è la palla */
+    '<div class="riga" style="margin-top:10px;flex-wrap:wrap;gap:4px 14px">' +
+      [["var(--gold)","tocca a te"], ["var(--navy)","stanno rispondendo"],
+       ["var(--red)","oltre "+GIORNI_TROPPI+" giorni"], ["var(--green)","recuperato tutto"],
+       ["var(--line)","niente da fare"]].map(([c,n]) =>
+        '<span class="mini" style="flex:0 0 auto;display:inline-flex;align-items:center;gap:5px">' +
+        '<span style="width:11px;height:11px;border-radius:3px;background:'+c+';display:inline-block"></span>' +
+        n + '</span>').join("") + '</div>';
   s.appendChild(t);
   t.querySelectorAll("[data-f]").forEach(b => b.onclick = () => {
     rimbFiltro = b.dataset.f; rimbAperta = null; rimbPasso = null; disegna(); });
@@ -1313,7 +1396,9 @@ function schermoRimborsi(s){
     const sez = document.createElement("section");
     const atteso = p.stato === "attesa FASI" ? giorniDa(p.fasiRichiesta)
                  : p.stato === "attesa AON"  ? giorniDa(p.aonRichiesta) : null;
-    const vecchia = atteso !== null && atteso > 60;
+    const vecchia = atteso !== null && atteso > GIORNI_TROPPI;
+    const col = coloreStato(p);
+    sez.style.borderLeft = "5px solid " + col.c;
     let h = '<div data-apri="'+p.riga+'" style="cursor:pointer">' +
       '<div class="riga" style="align-items:baseline">' +
         '<b style="flex:1">'+p.cosa+'</b><div class="num">'+euro(p.valore)+'</div></div>' +
@@ -1336,7 +1421,10 @@ function schermoRimborsi(s){
       } else {
         h += '<div class="riga" style="margin-top:10px;flex-wrap:wrap;gap:7px">';
         if (p.stato === "da richiedere")
+          // Si può anche saltare FASI: quando la sua quota l'ha già pagata
+          // direttamente la struttura, resta solo la parte di AON da chiedere.
           h += '<button class="b ghost" data-az="chiediFASI|'+p.riga+'">Richiesto a FASI</button>' +
+               '<button class="b ghost" data-az="chiediAON|'+p.riga+'">Direttamente ad AON</button>' +
                '<button class="b ghost" data-az="nonRich|'+p.riga+'">Non richiedibile</button>';
         if (p.stato === "attesa FASI")
           h += '<button class="b ghost" data-az="rispFASI|'+p.riga+'">FASI ha risposto</button>';
@@ -1419,8 +1507,11 @@ function modulo(p, passo){
     '</div>';
   if (passo.decurta) {
     const c = passo.decurta;
-    h += '<div class="avviso g" style="margin-top:4px">Ora vanno tolti <b>'+euro(c.importo)+
-         '</b> dal master. Quale riga?</div>';
+    const certa = c.candidate.length === 1 && c.candidate[0].certa;
+    h += '<div class="avviso '+(certa?'v':'g')+'" style="margin-top:4px">Ora vanno tolti <b>'+
+         euro(c.importo)+'</b> dal master. ' +
+         (certa ? 'Questa pratica è nata insieme alla spesa, quindi la riga è questa:'
+                : 'Quale riga?') + '</div>';
     if (!c.candidate.length) {
       h += '<div class="mini">Nessuna riga Medico abbastanza capiente nei mesi vicini. ' +
            'Falla a mano in Excel.</div>';
