@@ -126,11 +126,11 @@
 const CFG_PREDEFINITA = {
   ponte: "",
   token: "",
-  pagamenti: ["Visa","Addebito banca","Ticket Restaurant","Contanti","Bancomat","Bonifico","Mastercard"],
-  catEntrate: []   // ricavate dai dati: vedi categorieEntrata()
+  pagamenti: ["Visa","Addebito banca","Ticket Restaurant","Contanti","Bancomat","Bonifico","Mastercard"]
 };
 
-const K = { cfg:"spese3-cfg", coda:"spese3-coda", storico:"spese3-storico", riep:"spese3-riepilogo", abit:"spese3-abitudini" };
+const K = { cfg:"spese3-cfg", coda:"spese3-coda", storico:"spese3-storico", riep:"spese3-riepilogo",
+            abit:"spese3-abitudini", tax:"spese3-tassonomia" };
 const MESI = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
 
 /* ---------- memoria locale ---------- */
@@ -141,6 +141,7 @@ let CFG = Object.assign({}, CFG_PREDEFINITA, leggi(K.cfg, {}));
 let coda = leggi(K.coda, []);        // spese non ancora accettate dal ponte
 let storico = leggi(K.storico, []);  // spese inviate, tenute per memoria locale
 let riepilogo = leggi(K.riep, null);
+let tassonomia = leggi(K.tax, null);
 let statoAgente = null;
 let scheda = "nuova";
 
@@ -163,8 +164,32 @@ const importoDaTesto = (s) => { if(typeof s==="number") return s;
   else   t = t.replace(/[.,]/g,"");
   const n = parseFloat(t); return isNaN(n)?null:Math.round(n*100)/100; };
 
-/* ---------- categorie ricavate dal riepilogo ---------- */
+/* ---------- tassonomia: categorie, sottocategorie e legami ammessi ----------
+   Quando la tassonomia c'è, è lei a comandare: i menu propongono solo le
+   combinazioni ammesse. Se manca — primo avvio, ponte irraggiungibile — si
+   ricade sulle coppie realmente presenti nei dati, come prima. */
+const taxOk = () => !!(tassonomia && tassonomia.categorie && tassonomia.legami);
+const taxNomeCat = (id) => { const c = (tassonomia.categorie||[]).find(x=>x.id===id); return c?c.nome:null; };
+const taxNomeSub = (id) => { const s = (tassonomia.sottocategorie||[]).find(x=>x.id===id); return s?s.nome:null; };
+const taxCat = (nome) => (tassonomia.categorie||[]).find(x=>x.nome===nome);
+const taxSub = (nome) => (tassonomia.sottocategorie||[]).find(x=>x.nome===nome);
+
+function categorieDaTassonomia(){
+  const out = {};
+  (tassonomia.categorie||[]).filter(c=>c.attiva).forEach(c => { out[c.nome] = []; });
+  (tassonomia.legami||[]).forEach(l => {
+    if (!l.attivo) return;
+    const c = taxNomeCat(l.cat), s = taxNomeSub(l.sub);
+    if (c && s && out[c]) out[c].push(s);
+  });
+  Object.keys(out).forEach(c => out[c].sort((a,b)=>a.localeCompare(b,"it")));
+  const ord = {};
+  Object.keys(out).sort((a,b)=>a.localeCompare(b,"it")).forEach(c => ord[c] = out[c]);
+  return ord;
+}
+
 function categorie(){
+  if (taxOk()) return categorieDaTassonomia();
   const m = {};
   (riepilogo && riepilogo.voci || []).forEach(v => { (m[v.cat] = m[v.cat] || new Set()).add(v.sub); });
   [...coda, ...storico].forEach(v => { (m[v.categoria] = m[v.categoria] || new Set()).add(v.sottocategoria); });
@@ -289,15 +314,8 @@ function frequenzaCoppie(){
   return c;
 }
 
-/* Categorie di entrata: ricavate dai dati, non scritte nel codice. */
-function categorieEntrata(){
-  const bil = {};
-  (riepilogo && riepilogo.voci || []).forEach(v => {
-    bil[v.cat] = bil[v.cat] || { In:0, Out:0 };
-    bil[v.cat][v.inout] += v.valore;
-  });
-  return Object.keys(bil).filter(c => bil[c].In > bil[c].Out);
-}
+/* Le entrate non si registrano più: dal 25/10/2026 sono uscite dal master e
+   dalla tassonomia, e ogni spesa nuova è per definizione un'uscita. */
 
 /* ---------- interprete locale della frase ---------- */
 const UNITA  = {zero:0,uno:1,un:1,una:1,due:2,tre:3,quattro:4,cinque:5,sei:6,sette:7,otto:8,nove:9};
@@ -469,7 +487,6 @@ function interpreta(testo){
     r.pagamento = (ab && ab.metodo !== "Ticket Restaurant") ? ab.metodo : "Visa";
   }
   if (!r.pagamento) r.pagamento = CFG.pagamenti[0];
-  if (categorieEntrata().includes(r.categoria)) r.inout = "In";
   return r;
 }
 
@@ -610,6 +627,10 @@ async function sincronizza(silenzioso){
     statoAgente = await chiamaPonte("stato");
     const r = await chiamaPonte("riepilogo");
     if (r && r.voci) { riepilogo = r; scrivi(K.riep, r); }
+    try {   // la tassonomia non è indispensabile: senza, si ricade sui dati
+      const x = await chiamaPonte("tassonomia");
+      if (x && x.categorie && x.legami) { tassonomia = x; scrivi(K.tax, x); }
+    } catch(e) {}
     disegna();
     return true;
   } catch(e) {
@@ -639,7 +660,8 @@ function salvaSpesa(v){
 /* =========================================================================
    Schermate
    ========================================================================= */
-const TITOLI = { nuova:"Registra una spesa", registro:"Registro", mese:"Cruscotto", altro:"Impostazioni" };
+const TITOLI = { nuova:"Registra una spesa", registro:"Registro", mese:"Cruscotto",
+                 altro:"Impostazioni", voci:"Gestione voci" };
 
 function disegna(){
   const s = document.getElementById("schermo");
@@ -658,6 +680,7 @@ function disegna(){
   if (scheda==="registro") schermoRegistro(s);
   if (scheda==="mese") schermoMese(s);
   if (scheda==="altro") schermoAltro(s);
+  if (scheda==="voci") schermoVoci(s);
   disegnaTabs();
   window.scrollTo(0,0);
 }
@@ -673,7 +696,7 @@ function disegnaTabs(){
   const c = document.getElementById("tabs"); c.innerHTML = "";
   Object.keys(nomi).forEach(k => {
     const b = document.createElement("button");
-    b.className = scheda===k ? "on" : "";
+    b.className = (scheda===k || (scheda==="voci" && k==="altro")) ? "on" : "";
     b.innerHTML = '<span style="position:relative"><svg viewBox="0 0 24 24">'+icone[k]+'</svg>'+
       (k==="registro" && coda.length ? '<span class="badge num">'+coda.length+'</span>' : '')+
       '</span><span>'+nomi[k]+'</span>';
@@ -762,10 +785,7 @@ function schermoNuova(s){
     '<div class="campo"><label>SOTTOCATEGORIA</label><select id="sub"'+(subs.length?'':' disabled')+'>' +
       subs.map(x=>'<option'+(x===bozza.sottocategoria?' selected':'')+'>'+x+'</option>').join("") +
     '</select></div></div>' +
-    '<div class="riga"><div class="campo"><label>DATA</label><input type="date" id="data" value="'+bozza.data+'"></div>' +
-    '<div class="campo"><label>TIPO</label><div class="seg">' +
-      '<button id="tOut" class="'+(bozza.inout==="Out"?"on":"")+'">Uscita</button>' +
-      '<button id="tIn" class="'+(bozza.inout==="In"?"on":"")+'">Entrata</button></div></div></div>' +
+    '<div class="campo"><label>DATA</label><input type="date" id="data" value="'+bozza.data+'"></div>' +
     '<div class="campo"><label>PAGAMENTO'+(bozza.pagamento?'':' — obbligatorio')+'</label>' +
       '<div class="chips" id="pag">' + CFG.pagamenti.map(p =>
         '<button class="chip'+(p===bozza.pagamento?' on':'')+'" data-p="'+p+'">'+p+'</button>').join("") + '</div></div>' +
@@ -791,11 +811,9 @@ function schermoNuova(s){
   q("cat").onchange = () => { aggiorna(); bozza.categoria = q("cat").value;
     bozza.sottocategoria = (cats[bozza.categoria]||[])[0] || "";
     const ab = pagamentoAbituale(bozza.categoria, bozza.sottocategoria); if (ab) bozza.pagamento = ab.metodo;
-    bozza.inout = categorieEntrata().includes(bozza.categoria) ? "In" : "Out"; disegna(); };
+    disegna(); };
   q("sub").onchange = () => { aggiorna(); bozza.sottocategoria = q("sub").value;
     const ab = pagamentoAbituale(bozza.categoria, bozza.sottocategoria); if (ab) bozza.pagamento = ab.metodo; disegna(); };
-  q("tOut").onclick = () => { aggiorna(); bozza.inout="Out"; disegna(); };
-  q("tIn").onclick  = () => { aggiorna(); bozza.inout="In"; disegna(); };
   q("split").onchange = () => { aggiorna(); bozza.split = q("split").checked; disegna(); };
   if (q("ticket")) q("ticket").oninput = () => { bozza.ticket = q("ticket").value; mostraAnteprima(); };
   q("pag").querySelectorAll(".chip").forEach(b => b.onclick = () => { aggiorna(); bozza.pagamento = b.dataset.p; disegna(); });
@@ -1037,6 +1055,167 @@ function schermoMese(s){
 }
 
 /* ---------- ALTRO ---------- */
+/* ---------- Gestione voci ----------
+   Categorie, sottocategorie e legami ammessi. L'impostazione è per categoria e
+   non a matrice: sette categorie per trenta sottocategorie farebbero una
+   griglia illeggibile su un telefono.
+   Niente cancellazioni, solo disattivazioni: una voce dismessa sparisce dai
+   menu ma lo storico che la usa resta leggibile. */
+let vociAperta = null, vociStoriche = false, vociModificata = false;
+
+const ident = (nome, prefisso) => prefisso + nome.toLowerCase()
+  .normalize("NFD").replace(/[̀-ͯ]/g,"")
+  .replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+
+function taxLegame(catId, subId){
+  return (tassonomia.legami||[]).find(l => l.cat===catId && l.sub===subId);
+}
+function taxCommuta(catId, subId){
+  const l = taxLegame(catId, subId);
+  if (l) l.attivo = !l.attivo;
+  else tassonomia.legami.push({ cat:catId, sub:subId, attivo:true, uso:0, ultimo:0 });
+  vociModificata = true;
+}
+function taxNuovaSotto(catId, nome){
+  nome = (nome||"").trim();
+  if (!nome) return "Scrivi un nome";
+  let s = taxSub(nome);
+  if (!s) {
+    const id = ident(nome, "sub_");
+    if ((tassonomia.sottocategorie||[]).some(x=>x.id===id)) return "Esiste già una voce con questo nome";
+    s = { id:id, nome:nome, attiva:true, alias:[], uso:0 };
+    tassonomia.sottocategorie.push(s);
+  }
+  const l = taxLegame(catId, s.id);
+  if (l && l.attivo) return "Questo legame c'è già";
+  if (l) l.attivo = true; else tassonomia.legami.push({ cat:catId, sub:s.id, attivo:true, uso:0, ultimo:0 });
+  vociModificata = true;
+  return null;
+}
+function taxNuovaCategoria(nome){
+  nome = (nome||"").trim();
+  if (!nome) return "Scrivi un nome";
+  if (taxCat(nome)) return "Esiste già una categoria con questo nome";
+  const id = ident(nome, "cat_");
+  if ((tassonomia.categorie||[]).some(x=>x.id===id)) return "Esiste già una voce con questo nome";
+  tassonomia.categorie.push({ id:id, nome:nome, attiva:true, alias:[], uso:0, luoghi:[] });
+  // Varie è il raccoglitore di ogni categoria: si crea subito il legame
+  const varie = taxSub("Varie");
+  if (varie) tassonomia.legami.push({ cat:id, sub:varie.id, attivo:true, uso:0, ultimo:0 });
+  vociAperta = nome; vociModificata = true;
+  return null;
+}
+
+async function salvaTassonomia(){
+  try {
+    const e = await chiamaPonte("salva_tassonomia", { tassonomia: tassonomia });
+    if (e && e.ok) {
+      scrivi(K.tax, tassonomia); vociModificata = false;
+      avviso("Tassonomia salvata: " + e.legami + " legami");
+    } else throw new Error((e && e.errore) || "rifiutata");
+  } catch(err) {
+    avviso("Salvataggio non riuscito: " + err.message, true);
+  }
+  disegna();
+}
+
+function schermoVoci(s){
+  if (!taxOk()) {
+    const v = document.createElement("section");
+    v.innerHTML = '<div class="avviso g">Non ho ancora la tassonomia. Premi ' +
+      '<b>Sincronizza</b> in Impostazioni: viene scaricata dal ponte insieme al riepilogo.</div>' +
+      '<button class="b ghost" id="btorna">Torna a Impostazioni</button>';
+    s.appendChild(v);
+    document.getElementById("btorna").onclick = () => { scheda="altro"; disegna(); };
+    return;
+  }
+
+  const cats = (tassonomia.categorie||[]).filter(c => vociStoriche || c.attiva)
+                 .sort((a,b)=>a.nome.localeCompare(b.nome,"it"));
+  const subs = (tassonomia.sottocategorie||[]).slice().sort((a,b)=>a.nome.localeCompare(b.nome,"it"));
+  const attivi = (tassonomia.legami||[]).filter(l=>l.attivo).length;
+
+  const testa = document.createElement("section");
+  testa.innerHTML = '<h2>Voci e legami</h2>' +
+    '<div class="mini">I menu di registrazione propongono solo le combinazioni ammesse. ' +
+    'Le voci non si cancellano, si disattivano: lo storico resta leggibile.</div>' +
+    '<table style="margin-top:10px"><tr><td>Categorie attive</td><td class="r num">' +
+      (tassonomia.categorie||[]).filter(c=>c.attiva).length + '</td></tr>' +
+    '<tr><td>Sottocategorie</td><td class="r num">' + subs.length + '</td></tr>' +
+    '<tr><td>Legami ammessi</td><td class="r num">' + attivi + '</td></tr></table>' +
+    '<label class="mini" style="display:flex;align-items:center;gap:8px;margin-top:10px">' +
+      '<input type="checkbox" id="vstor" style="width:auto"'+(vociStoriche?' checked':'')+
+      '> Mostra anche le voci storiche</label>';
+  s.appendChild(testa);
+  document.getElementById("vstor").onchange = (ev) => { vociStoriche = ev.target.checked; disegna(); };
+
+  cats.forEach(c => {
+    const aperta = vociAperta === c.nome;
+    const legatiAttivi = (tassonomia.legami||[]).filter(l => l.cat===c.id && l.attivo).length;
+    const sez = document.createElement("section");
+    let html = '<div class="riga" style="align-items:center;cursor:pointer" data-apri="'+c.nome+'">' +
+      '<div style="flex:1"><b>'+c.nome+'</b>' + (c.attiva ? '' : ' <span class="mini">— storica</span>') +
+      '<div class="mini">'+legatiAttivi+' sottocategorie ammesse</div></div>' +
+      '<div class="mini">'+(aperta?"▲":"▼")+'</div></div>';
+
+    if (aperta) {
+      html += '<div style="margin-top:8px">';
+      subs.forEach(sb => {
+        const l = taxLegame(c.id, sb.id);
+        const on = !!(l && l.attivo);
+        const usata = l && l.uso ? ' <span class="mini">('+l.uso+' righe)</span>' : '';
+        if (!on && !vociStoriche && !(l && l.uso)) return;   // nasconde le combinazioni mai usate
+        html += '<label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:14px">' +
+          '<input type="checkbox" style="width:auto" data-lega="'+c.id+'|'+sb.id+'"'+(on?' checked':'')+'> ' +
+          sb.nome + usata + '</label>';
+      });
+      html += '</div>' +
+        '<div class="riga" style="margin-top:8px">' +
+          '<input id="ns-'+c.id+'" placeholder="Nuova sottocategoria per '+c.nome+'">' +
+          '<button class="b ghost" style="flex:0 0 auto" data-nuovasub="'+c.id+'">Aggiungi</button></div>' +
+        '<button class="b ghost" style="margin-top:8px" data-spegni="'+c.id+'">' +
+          (c.attiva ? 'Disattiva questa categoria' : 'Riattiva questa categoria') + '</button>' +
+        '<div class="mini" style="margin-top:6px">Per vedere tutte le sottocategorie disponibili, ' +
+          'spunta "Mostra anche le voci storiche" qui sopra.</div>';
+    }
+    sez.innerHTML = html;
+    s.appendChild(sez);
+  });
+
+  const nuova = document.createElement("section");
+  nuova.innerHTML = '<h2>Nuova categoria</h2>' +
+    '<div class="riga"><input id="ncat" placeholder="Nome della categoria">' +
+    '<button class="b ghost" style="flex:0 0 auto" id="bncat">Crea</button></div>' +
+    '<div class="mini" style="margin-top:6px">Nasce con la sola sottocategoria Varie: ' +
+    'le altre si aggiungono aprendola qui sopra.</div>';
+  s.appendChild(nuova);
+
+  const azioni = document.createElement("section");
+  azioni.innerHTML =
+    (vociModificata ? '<div class="avviso g">Ci sono modifiche non salvate.</div>' : '') +
+    '<button class="b" id="bsalvatax"'+(vociModificata?'':' disabled')+'>Salva la tassonomia</button>' +
+    '<button class="b ghost" style="margin-top:8px" id="bannullatax">Torna a Impostazioni</button>';
+  s.appendChild(azioni);
+
+  /* comportamenti */
+  s.querySelectorAll("[data-apri]").forEach(e => e.onclick = () => {
+    vociAperta = (vociAperta === e.dataset.apri) ? null : e.dataset.apri; disegna(); });
+  s.querySelectorAll("[data-lega]").forEach(e => e.onchange = () => {
+    const [ci, si] = e.dataset.lega.split("|"); taxCommuta(ci, si); disegna(); });
+  s.querySelectorAll("[data-nuovasub]").forEach(e => e.onclick = () => {
+    const campo = document.getElementById("ns-" + e.dataset.nuovasub);
+    const err = taxNuovaSotto(e.dataset.nuovasub, campo.value);
+    if (err) avviso(err, true); else disegna(); });
+  s.querySelectorAll("[data-spegni]").forEach(e => e.onclick = () => {
+    const c = (tassonomia.categorie||[]).find(x=>x.id===e.dataset.spegni);
+    if (c) { c.attiva = !c.attiva; vociModificata = true; disegna(); } });
+  document.getElementById("bncat").onclick = () => {
+    const err = taxNuovaCategoria(document.getElementById("ncat").value);
+    if (err) avviso(err, true); else disegna(); };
+  document.getElementById("bsalvatax").onclick = () => salvaTassonomia();
+  document.getElementById("bannullatax").onclick = () => { scheda="altro"; disegna(); };
+}
+
 function schermoAltro(s){
   /* stato agente */
   const a = document.createElement("section");
@@ -1065,11 +1244,16 @@ function schermoAltro(s){
     '<tr><td>Anni disponibili</td><td class="r num">'+(riepilogo ? (riepilogo.anni||[]).length : 0)+'</td></tr>' +
     '<tr><td>Riepilogo aggiornato al</td><td class="r">'+(riepilogo ? (riepilogo.generatoIl||"").replace("T"," ").slice(0,16) : "—")+'</td></tr>' +
     '<tr><td>Versione dell\'app</td><td class="r">'+VERSIONE+' — '+VERSIONE_DATA+'</td></tr>' +
+    '<tr><td>Legami ammessi</td><td class="r num">' +
+      (taxOk() ? (tassonomia.legami||[]).filter(l=>l.attivo).length : "—") + '</td></tr>' +
     '</table>' +
+    '<button class="b ghost" style="margin-top:10px" id="bvoci">Gestione voci</button>' +
+    '<div class="mini" style="margin-top:6px">Categorie, sottocategorie e combinazioni ammesse.</div>' +
     '<div class="riga" style="margin-top:10px">' +
     '<button class="b ghost" id="bback">Scarica copia</button>' +
     '<button class="b ghost" id="bsvuota" style="color:var(--red)">Svuota coda</button></div>';
   s.appendChild(d);
+  document.getElementById("bvoci").onclick = () => { scheda = "voci"; disegna(); };
   document.getElementById("bback").onclick = () => {
     const blob = new Blob([JSON.stringify({coda, storico, cfg:CFG}, null, 1)], {type:"application/json"});
     const u = URL.createObjectURL(blob); const link = document.createElement("a");
