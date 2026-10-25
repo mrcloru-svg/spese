@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1E2761">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icona-192.png">
+<title>Spese</title>
+<style>
+  :root{
+    --navy:#1E2761; --gold:#C9A227; --goldsoft:#F4E9C8; --ice:#CADCFC;
+    --ink:#22273A; --mute:#5A6478; --panel:#F3F6FC; --line:#D9E2F2;
+    --paper:#F7F8FC; --green:#1E7A46; --greensoft:#E3F2E9; --red:#B23A3A; --redsoft:#FBEAEA;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink);
+       font-size:16px;line-height:1.45;padding-bottom:env(safe-area-inset-bottom)}
+  .num{font-variant-numeric:tabular-nums}
+  header{background:var(--navy);padding:calc(14px + env(safe-area-inset-top)) 16px 12px}
+  header .wrap{max-width:720px;margin:0 auto;display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+  .eyebrow{color:var(--gold);font-size:11px;font-weight:700;letter-spacing:2px}
+  h1{color:#fff;font-size:19px;margin:2px 0 0;font-weight:700}
+  .stato{text-align:right;color:var(--ice);font-size:11px;line-height:1.3}
+  .stato b{display:block;color:#fff;font-size:17px}
+  main{max-width:720px;margin:0 auto;padding:14px 16px 96px}
+  nav{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);
+      padding-bottom:env(safe-area-inset-bottom);z-index:30}
+  nav .wrap{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
+  nav button{background:none;border:0;padding:9px 0 7px;color:var(--mute);font-size:11px;font-weight:500;
+             display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;font-family:inherit}
+  nav button.on{color:var(--navy);font-weight:700}
+  nav svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  nav button.on svg{stroke-width:2.4}
+  .badge{position:absolute;transform:translate(12px,-6px);background:var(--gold);color:#fff;font-size:10px;
+         font-weight:700;border-radius:9px;padding:1px 5px}
+  section{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+  section.flat{background:var(--panel)}
+  section.dark{background:var(--navy);border-color:var(--navy);color:#fff}
+  h2{font-size:14px;margin:0 0 10px;color:var(--navy)}
+  section.dark h2{color:#fff}
+  label{display:block;font-size:11px;font-weight:700;color:var(--mute);margin-bottom:3px;letter-spacing:.3px}
+  input,select,textarea{width:100%;font-family:inherit;font-size:16px;padding:10px 11px;border:1px solid var(--line);
+         border-radius:11px;background:#fff;color:var(--ink)}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--navy);outline-offset:-1px}
+  textarea{resize:vertical}
+  .riga{display:flex;gap:9px}
+  .riga>*{flex:1;min-width:0}
+  .campo{margin-bottom:11px}
+  .importo{font-size:34px;font-weight:700;color:var(--navy);border:0;padding:4px 0;background:none}
+  .importo:focus{outline:0;border-bottom:2px solid var(--gold)}
+  button.b{font-family:inherit;font-size:15px;font-weight:700;padding:13px;border-radius:12px;border:0;
+           background:var(--gold);color:#fff;width:100%;cursor:pointer}
+  button.b.sec{background:#fff;color:var(--navy);border:1px solid var(--navy);font-weight:600}
+  button.b.ghost{background:var(--panel);color:var(--navy);border:1px solid var(--line);font-weight:600}
+  button.b:disabled{opacity:.4}
+  .chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{white-space:nowrap;border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 12px;
+        font-size:13px;color:var(--navy);cursor:pointer;font-family:inherit}
+  .chip.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .seg{display:flex;border:1px solid var(--line);border-radius:11px;overflow:hidden}
+  .seg button{flex:1;border:0;background:#fff;color:var(--mute);padding:10px 4px;font-size:13px;font-weight:600;
+              cursor:pointer;font-family:inherit}
+  .seg button.on{background:var(--navy);color:#fff}
+  .voce{display:flex;align-items:center;gap:10px;padding:10px 2px;border-top:1px solid var(--panel);cursor:pointer}
+  .voce:first-of-type{border-top:0}
+  .voce .t{flex:1;min-width:0}
+  .voce .t .d{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .voce .t .s{font-size:11.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .voce .v{font-weight:700;font-size:14.5px;white-space:nowrap}
+  .pallino{width:10px;height:10px;border-radius:50%;flex:0 0 10px}
+  .avviso{border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+  .avviso.g{background:var(--goldsoft);color:var(--navy)}
+  .avviso.r{background:var(--redsoft);color:var(--red)}
+  .avviso.v{background:var(--greensoft);color:var(--green)}
+  .barra{height:8px;border-radius:99px;background:var(--panel);overflow:hidden;margin-top:3px}
+  .barra i{display:block;height:100%;border-radius:99px;background:var(--navy)}
+  .mini{font-size:11.5px;color:var(--mute)}
+  .tot{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;font-size:14px}
+  .tot b{font-size:14.5px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td,th{padding:6px 4px;text-align:left;border-bottom:1px solid var(--panel)}
+  th{font-size:11px;color:var(--mute);font-weight:700}
+  td.r,th.r{text-align:right}
+  #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:84px;background:var(--green);color:#fff;
+         padding:9px 16px;border-radius:999px;font-size:14px;z-index:60;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+  #toast.err{background:var(--red)}
+  .vuoto{text-align:center;color:var(--mute);font-size:14px;padding:26px 10px}
+  .modale{position:fixed;inset:0;background:rgba(20,24,43,.45);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+  .modale .box{background:#fff;width:100%;max-width:720px;border-radius:22px 22px 0 0;padding:16px;max-height:92vh;overflow:auto}
+  @media(min-width:721px){.modale{align-items:center}.modale .box{border-radius:22px}}
+  .x{float:right;border:0;background:var(--panel);border-radius:50%;width:30px;height:30px;font-size:16px;cursor:pointer}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div>
+      <div class="eyebrow">SPESE 3.0</div>
+      <h1 id="titolo">Registra una spesa</h1>
+    </div>
+    <div class="stato">
+      <span>da inviare</span>
+      <b id="contaCoda" class="num">0</b>
+    </div>
+  </div>
+</header>
+
+<main id="schermo"></main>
+
+<nav><div class="wrap" id="tabs"></div></nav>
+
+<script>
+/* =========================================================================
+   Spese 3.0 — applicazione
+   Scrive nella coda su Drive attraverso il ponte Apps Script; legge da lì il
+   riepilogo pubblicato dall'agente che gira sul PC.
+   ========================================================================= */
+
+/* Indirizzo del ponte e chiave NON stanno nel codice: si inseriscono al primo
+   avvio su ogni dispositivo e restano salvati solo lì. Così l'app può essere
+   pubblicata su un indirizzo web pubblico senza esporre nulla. */
+const CFG_PREDEFINITA = {
+  ponte: "",
+  token: "",
+  pagamenti: ["Visa","Addebito banca","Ticket Restaurant","Contanti","Bancomat","Bonifico","Mastercard"],
+  catEntrate: ["Entrate dividendi","Rimborso Fasi e Assicurazione","Rimborso tasse","Stipendio"]
+};
+
+const K = { cfg:"spese3-cfg", coda:"spese3-coda", storico:"spese3-storico", riep:"spese3-riepilogo", abit:"spese3-abitudini" };
+const MESI = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
+
+/* ---------- memoria locale ---------- */
+const leggi = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } };
+const scrivi = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch(e){ return false; } };
+
+let CFG = Object.assign({}, CFG_PREDEFINITA, leggi(K.cfg, {}));
+let coda = leggi(K.coda, []);        // spese non ancora accettate dal ponte
+let storico = leggi(K.storico, []);  // spese inviate, tenute per memoria locale
+let riepilogo = leggi(K.riep, null);
+let statoAgente = null;
+let scheda = "nuova";
+
+/* ---------- formato numeri all'italiana ---------- */
+const raggruppa = (s) => { const m = s.match(/(\d{4,})/); if(!m) return s;
+  return s.replace(m[1], m[1].replace(/\B(?=(\d{3})+(?!\d))/g, ".")); };
+const euro = (v) => raggruppa(new Intl.NumberFormat("it-IT",{style:"currency",currency:"EUR",
+  minimumFractionDigits:2,maximumFractionDigits:2}).format(v||0));
+const nIt = (v,d=2) => raggruppa(new Intl.NumberFormat("it-IT",{minimumFractionDigits:d,maximumFractionDigits:d}).format(v||0));
+const oggiISO = () => { const d=new Date();
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+const itData = (iso) => { const [a,m,g]=iso.split("-"); return g+"/"+m+"/"+a; };
+const importoDaTesto = (s) => { if(typeof s==="number") return s;
+  const n = parseFloat(String(s).replace(/\./g,"").replace(",",".")); return isNaN(n)?null:Math.round(n*100)/100; };
+
+/* ---------- categorie ricavate dal riepilogo ---------- */
+function categorie(){
+  const m = {};
+  (riepilogo && riepilogo.voci || []).forEach(v => { (m[v.cat] = m[v.cat] || new Set()).add(v.sub); });
+  [...coda, ...storico].forEach(v => { (m[v.categoria] = m[v.categoria] || new Set()).add(v.sottocategoria); });
+  const out = {};
+  Object.keys(m).sort((a,b)=>a.localeCompare(b,"it")).forEach(c => {
+    out[c] = [...m[c]].filter(x=>x && x!=="—").sort((a,b)=>a.localeCompare(b,"it"));
+  });
+  return out;
+}
+
+/* ---------- abitudini di pagamento ---------- */
+function abitudini(){
+  const h = {};
+  const conta = (cat,sub,met,peso) => { if(!met) return;
+    const k = cat+"|"+sub; (h[k] = h[k] || {}); h[k][met] = (h[k][met]||0)+peso;
+    const k2 = cat+"|*"; (h[k2] = h[k2] || {}); h[k2][met] = (h[k2][met]||0)+peso; };
+  (riepilogo && riepilogo.dettaglio || []).forEach(v => conta(v.cat, v.sub, v.metodo, 1));
+  [...storico, ...coda].forEach(v => conta(v.categoria, v.sottocategoria, v.pagamento, 3));
+  return h;
+}
+function pagamentoAbituale(cat, sub){
+  const h = abitudini();
+  for (const k of [cat+"|"+sub, cat+"|*"]) {
+    const m = h[k]; if(!m) continue;
+    const best = Object.entries(m).sort((a,b)=>b[1]-a[1])[0];
+    if (best) { const tot = Object.values(m).reduce((s,x)=>s+x,0);
+      return { metodo: best[0], quota: best[1]/tot }; }
+  }
+  return null;
+}
+
+/* ---------- interprete locale della frase ---------- */
+const NUMERI = {zero:0,uno:1,una:1,due:2,tre:3,quattro:4,cinque:5,sei:6,sette:7,otto:8,nove:9,dieci:10,
+  undici:11,dodici:12,tredici:13,quattordici:14,quindici:15,sedici:16,diciassette:17,diciotto:18,diciannove:19,
+  venti:20,trenta:30,quaranta:40,cinquanta:50,sessanta:60,settanta:70,ottanta:80,novanta:90,cento:100,mille:1000};
+function numeroDaParole(testo){
+  // "sessanta e ottantasei" / "settantacinque zero uno" → prova a ricostruire
+  const p = testo.toLowerCase().replace(/[^a-zàèéìòù ]/g," ").split(/\s+/).filter(Boolean);
+  let tot=null, corrente=0, visto=false;
+  for (const w of p){
+    let v = NUMERI[w];
+    if (v === undefined) {
+      // parole composte tipo "settantacinque", "ottantasei"
+      for (const [d,n] of Object.entries(NUMERI)) {
+        if (n>=20 && n<100 && w.startsWith(d.slice(0,-1))) {
+          const resto = w.slice(d.length-1) || w.slice(d.length);
+          const u = NUMERI[resto];
+          if (u!==undefined && u<10) { v = n+u; break; }
+          if (w === d) { v = n; break; }
+        }
+      }
+    }
+    if (v !== undefined) { corrente += v; visto = true; }
+    else if (visto) { if(tot===null) tot=corrente; corrente=0; visto=false; }
+  }
+  if (visto) { if(tot===null) tot=corrente; else return tot + corrente/100; }
+  return tot;
+}
+function interpreta(testo){
+  const t = " " + testo.toLowerCase().trim() + " ";
+  const r = { valore:null, data:oggiISO(), categoria:"", sottocategoria:"", pagamento:"",
+              descrizione:testo.trim(), inout:"Out", quotaTicket:null };
+
+  // importo in cifre: 60,86 / 60.86 / 60
+  const cifre = t.match(/(\d+[.,]\d{1,2}|\d+)\s*(?:€|euro)?/g);
+  if (cifre && cifre.length) {
+    const valori = cifre.map(x => importoDaTesto(x.replace(/[^\d.,]/g,""))).filter(v => v!==null && v>0);
+    if (valori.length) r.valore = Math.max(...valori);
+    if (valori.length > 1 && /ticket|buoni pasto/.test(t)) {
+      const ord = valori.slice().sort((a,b)=>b-a);
+      r.valore = ord[0]; r.quotaTicket = ord[1];
+    }
+  }
+  if (r.valore === null) { const n = numeroDaParole(t); if (n) r.valore = Math.round(n*100)/100; }
+
+  // data relativa
+  const d = new Date();
+  if (/\bieri\b/.test(t)) d.setDate(d.getDate()-1);
+  else if (/altro ?ieri/.test(t)) d.setDate(d.getDate()-2);
+  const gg = t.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+  if (gg) { const a = gg[3] ? (gg[3].length===2 ? "20"+gg[3] : gg[3]) : d.getFullYear();
+    r.data = a+"-"+String(+gg[2]).padStart(2,"0")+"-"+String(+gg[1]).padStart(2,"0"); }
+  else r.data = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+
+  // mezzo di pagamento dichiarato
+  const mappaPag = [[/\bvisa\b/,"Visa"],[/mastercard|master card/,"Mastercard"],[/bancomat/,"Bancomat"],
+    [/contant/,"Contanti"],[/ticket|buoni pasto/,"Ticket Restaurant"],[/bonific/,"Bonifico"],
+    [/addebito|rid\b|domicil/,"Addebito banca"]];
+  for (const [re,nome] of mappaPag) if (re.test(t)) { r.pagamento = nome; break; }
+
+  // categoria: prima per parole chiave note, poi per somiglianza con le descrizioni passate
+  const cats = categorie();
+  const chiavi = [
+    [/benzina|carburante|gasolio|rifornimento|distributore/, "Carburante"],
+    [/supermercat|spesa|esselunga|coop|lidl|md\b|conad|carrefour/, "Spesa/Cibo"],
+    [/pranzo|cena|ristorante|pizzeria|bar\b|colazione|caff|sushi/, "Mangiare fuori"],
+    [/farmaci|medicin|dottore|visita|dentista|analisi|ticket sanitario/, "Medico"],
+    [/autostrada|pedaggio|telepass/, "Autostrada"],
+    [/luce|enel|elettricit/, "Elettricità"],
+    [/gas\b|metano|bombola/, "Gas"],
+    [/acqua\b/, "Acqua"],
+    [/netflix|telefon|cellulare|internet|fibra|spotify|abbonament/, "Tel fisso / cell / iPad / pc / netflix"],
+    [/regal/, "Regali"],
+    [/benzina elettric|ricarica elettr/, "Carburante Elettrico"]
+  ];
+  let subTrovata = "";
+  for (const [re,sub] of chiavi) if (re.test(t)) { subTrovata = sub; break; }
+  if (subTrovata) {
+    // luogo citato per scegliere la categoria giusta fra quelle che hanno quella sottocategoria
+    const candidate = Object.keys(cats).filter(c => cats[c].includes(subTrovata));
+    let scelta = candidate[0] || "";
+    if (/sardegna|gonnesa/.test(t)) scelta = candidate.find(c=>/sardegna/i.test(c)) || scelta;
+    else if (/milano/.test(t)) scelta = candidate.find(c=>/milano/i.test(c)) || scelta;
+    else if (/caravaggio|casa/.test(t)) scelta = candidate.find(c=>/^casa/i.test(c)) || scelta;
+    else if (/letizia/.test(t)) scelta = candidate.find(c=>/letizia/i.test(c)) || scelta;
+    if (scelta) { r.categoria = scelta; r.sottocategoria = subTrovata; }
+  }
+  if (!r.categoria) {
+    // somiglianza con le descrizioni già usate in passato
+    const parole = t.split(/\s+/).filter(w => w.length>3);
+    let best=null, punti=0;
+    (riepilogo && riepilogo.dettaglio || []).forEach(v => {
+      if (!v.desc) return;
+      const dd = " "+v.desc.toLowerCase()+" ";
+      let p = 0; parole.forEach(w => { if (dd.includes(w)) p += w.length; });
+      if (p > punti) { punti = p; best = v; }
+    });
+    if (best && punti >= 5) { r.categoria = best.cat; r.sottocategoria = best.sub; }
+  }
+  if (r.categoria && !r.pagamento) {
+    const ab = pagamentoAbituale(r.categoria, r.sottocategoria);
+    if (ab && ab.quota >= 0.5) r.pagamento = ab.metodo;
+  }
+  // Nel pagamento misto il mezzo indicato riguarda la quota NON coperta dai ticket
+  if (r.quotaTicket != null && r.pagamento === "Ticket Restaurant") {
+    const ab = r.categoria ? pagamentoAbituale(r.categoria, r.sottocategoria) : null;
+    r.pagamento = (ab && ab.metodo !== "Ticket Restaurant") ? ab.metodo : "Visa";
+  }
+  if (!r.pagamento) r.pagamento = CFG.pagamenti[0];
+  if (CFG.catEntrate.includes(r.categoria)) r.inout = "In";
+  return r;
+}
+
+/* ---------- dettatura vocale del browser ----------
+   Funziona in Chrome su PC e Android. Su iPhone il riconoscimento non è
+   disponibile: lì si usa il microfono della tastiera, che scrive nel campo. */
+const PAUSA_FINE = 2500;   // silenzio dopo cui si considera finita la frase
+const DURATA_MAX = 45000;  // limite di sicurezza complessivo
+
+let riconoscitore = null, inAscolto = false;
+let testoFinale = "", timerSilenzio = null, timerMax = null, chiusuraVoluta = false;
+
+function vocaleDisponibile(){
+  return typeof window !== "undefined" &&
+         ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+}
+function azzeraTimer(){ clearTimeout(timerSilenzio); clearTimeout(timerMax); timerSilenzio = timerMax = null; }
+function fermaDettatura(){
+  chiusuraVoluta = true; inAscolto = false; azzeraTimer();
+  try { if (riconoscitore) riconoscitore.stop(); } catch(e){}
+  riconoscitore = null;
+}
+function avviaDettatura(mentreParla, allaFine, suErrore){
+  const R = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!R) return suErrore("Dettatura non disponibile in questo browser");
+  try {
+    testoFinale = ""; chiusuraVoluta = false; inAscolto = true;
+    riconoscitore = new R();
+    riconoscitore.lang = "it-IT";
+    riconoscitore.continuous = true;      // non si chiude alla prima pausa
+    riconoscitore.interimResults = true;
+
+    const concludi = () => {
+      chiusuraVoluta = true; azzeraTimer();
+      try { riconoscitore.stop(); } catch(e){}
+    };
+    const rimandaChiusura = () => {
+      clearTimeout(timerSilenzio);
+      timerSilenzio = setTimeout(concludi, PAUSA_FINE);
+    };
+
+    riconoscitore.onresult = ev => {
+      let provvisorio = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const t = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) testoFinale += t + " "; else provvisorio += t;
+      }
+      mentreParla((testoFinale + provvisorio).trim());
+      rimandaChiusura();   // il conto alla rovescia riparte a ogni parola
+    };
+
+    riconoscitore.onerror = ev => {
+      if (ev.error === "no-speech" || ev.error === "aborted") return;  // si riprende da sé
+      inAscolto = false; chiusuraVoluta = true; azzeraTimer();
+      suErrore(ev.error === "not-allowed"
+        ? "Microfono negato: consentilo dall'icona nella barra dell'indirizzo"
+        : ev.error === "network" ? "Dettatura non raggiungibile: serve la rete"
+        : "Dettatura non riuscita (" + ev.error + ")");
+    };
+
+    riconoscitore.onend = () => {
+      // Il browser chiude la sessione anche da solo: se non è stata una
+      // chiusura voluta, si riparte senza perdere quanto già detto.
+      if (!chiusuraVoluta && inAscolto) { try { riconoscitore.start(); return; } catch(e){} }
+      inAscolto = false; azzeraTimer(); allaFine(testoFinale.trim());
+    };
+
+    riconoscitore.start();
+    rimandaChiusura();
+    timerMax = setTimeout(concludi, DURATA_MAX);
+  } catch(e) { inAscolto = false; suErrore("Dettatura non avviabile"); }
+}
+
+/* ---------- dialogo con il ponte ---------- */
+async function chiamaPonte(azione, dati){
+  const corpo = Object.assign({ token: CFG.token, azione: azione }, dati || {});
+  const risposta = await fetch(CFG.ponte, {
+    method: "POST", redirect: "follow",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(corpo)
+  });
+  if (!risposta.ok) throw new Error("il ponte ha risposto " + risposta.status);
+  const testo = await risposta.text();
+  try { return JSON.parse(testo); } catch(e) { throw new Error("risposta non leggibile dal ponte"); }
+}
+
+async function sincronizza(silenzioso){
+  try {
+    if (coda.length) {
+      const esito = await chiamaPonte("aggiungi", { voci: coda.map(v => ({
+        id:v.id, data:v.data, categoria:v.categoria, sottocategoria:v.sottocategoria,
+        valore:v.valore, pagamento:v.pagamento, inout:v.inout, descrizione:v.descrizione,
+        origine:v.origine
+      })) });
+      if (esito && esito.ok) {
+        storico = [...coda.map(v => Object.assign({}, v, { inviata:true })), ...storico].slice(0, 400);
+        coda = []; scrivi(K.coda, coda); scrivi(K.storico, storico);
+        if (!silenzioso) avviso("Spese inviate: ora tocca all'agente");
+      } else throw new Error((esito && esito.errore) || "rifiutata");
+    }
+    statoAgente = await chiamaPonte("stato");
+    const r = await chiamaPonte("riepilogo");
+    if (r && r.voci) { riepilogo = r; scrivi(K.riep, r); }
+    disegna();
+    return true;
+  } catch(e) {
+    if (!silenzioso) avviso("Sincronizzazione non riuscita: " + e.message, true);
+    disegna();
+    return false;
+  }
+}
+
+/* ---------- messaggi ---------- */
+let timerToast = null;
+function avviso(testo, errore){
+  let t = document.getElementById("toast");
+  if (!t) { t = document.createElement("div"); t.id="toast"; document.body.appendChild(t); }
+  t.textContent = testo; t.className = errore ? "err" : "";
+  clearTimeout(timerToast); timerToast = setTimeout(()=>{ t.remove(); }, 3000);
+}
+
+/* ---------- salvataggio di una spesa ---------- */
+function salvaSpesa(v){
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  coda.push(Object.assign({ id, creatoIl:new Date().toISOString(), origine: window.innerWidth<700?"telefono":"pc" }, v));
+  scrivi(K.coda, coda);
+}
+
+/* =========================================================================
+   Schermate
+   ========================================================================= */
+const TITOLI = { nuova:"Registra una spesa", registro:"Registro", mese:"Cruscotto", altro:"Impostazioni" };
+
+function disegna(){
+  const s = document.getElementById("schermo");
+  if (!CFG.ponte || !CFG.token) {
+    document.getElementById("titolo").textContent = "Primo avvio";
+    document.getElementById("contaCoda").textContent = coda.length;
+    s.innerHTML = "";
+    schermoPrimoAvvio(s);
+    document.getElementById("tabs").innerHTML = "";
+    return;
+  }
+  document.getElementById("titolo").textContent = TITOLI[scheda];
+  document.getElementById("contaCoda").textContent = coda.length;
+  s.innerHTML = "";
+  if (scheda==="nuova") schermoNuova(s);
+  if (scheda==="registro") schermoRegistro(s);
+  if (scheda==="mese") schermoMese(s);
+  if (scheda==="altro") schermoAltro(s);
+  disegnaTabs();
+  window.scrollTo(0,0);
+}
+
+function disegnaTabs(){
+  const icone = {
+    nuova:'<path d="M12 5v14M5 12h14"/>',
+    registro:'<path d="M3 5h12M3 12h12M3 19h12M18 5l2 2 3-3M18 12l2 2 3-3"/>',
+    mese:'<path d="M12 20V10M18 20V4M6 20v-4"/>',
+    altro:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.27.63.9 1.04 1.51 1.04H21a2 2 0 1 1 0 4h-.09c-.61 0-1.24.41-1.51 1.04z"/>'
+  };
+  const nomi = { nuova:"Nuova", registro:"Registro", mese:"Cruscotto", altro:"Altro" };
+  const c = document.getElementById("tabs"); c.innerHTML = "";
+  Object.keys(nomi).forEach(k => {
+    const b = document.createElement("button");
+    b.className = scheda===k ? "on" : "";
+    b.innerHTML = '<span style="position:relative"><svg viewBox="0 0 24 24">'+icone[k]+'</svg>'+
+      (k==="registro" && coda.length ? '<span class="badge num">'+coda.length+'</span>' : '')+
+      '</span><span>'+nomi[k]+'</span>';
+    b.onclick = () => { scheda = k; disegna(); };
+    c.appendChild(b);
+  });
+}
+
+/* ---------- PRIMO AVVIO ---------- */
+function schermoPrimoAvvio(s){
+  const c = document.createElement("section");
+  c.innerHTML = '<h2>Collega l\'app al tuo sistema</h2>' +
+    '<p style="font-size:13.5px;color:var(--mute);margin:0 0 14px">Due dati, una volta sola su questo ' +
+    'dispositivo. Restano salvati qui e non viaggiano altrove.</p>' +
+    '<div class="campo"><label>INDIRIZZO DEL PONTE</label>' +
+      '<input id="pponte" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></div>' +
+    '<div class="campo"><label>CHIAVE</label><input id="ptoken" placeholder="la chiave del ponte" autocomplete="off"></div>' +
+    '<button class="b" id="pavvia">Collega</button>' +
+    '<div class="mini" style="margin-top:10px">Li trovi nella conversazione con Claude e nel file ' +
+    '<b>ponte_appsscript.gs</b> dentro la cartella dell\'agente.</div>';
+  s.appendChild(c);
+  document.getElementById("pavvia").onclick = async (ev) => {
+    const p = document.getElementById("pponte").value.trim();
+    const t = document.getElementById("ptoken").value.trim();
+    if (!p || !t) return avviso("Compila entrambi i campi", true);
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(p))
+      return avviso("L'indirizzo deve finire con /exec", true);
+    CFG.ponte = p; CFG.token = t; scrivi(K.cfg, CFG);
+    ev.target.disabled = true; ev.target.textContent = "Verifico…";
+    const ok = await sincronizza(false);
+    if (ok) avviso("Collegato: scarico i tuoi dati");
+    else { ev.target.disabled = false; ev.target.textContent = "Collega"; }
+    disegna();
+  };
+}
+
+/* ---------- NUOVA ---------- */
+let bozza = null;
+function schermoNuova(s){
+  const cats = categorie();
+  if (!bozza) bozza = { valore:"", categoria:"", sottocategoria:"", data:oggiISO(),
+                        pagamento:"", descrizione:"", inout:"Out", split:false, ticket:"" };
+
+  if (!Object.keys(cats).length) {
+    s.innerHTML = '<div class="avviso g">Non ho ancora le tue categorie. Vai su <b>Altro</b> e premi ' +
+      '<b>Sincronizza</b> per scaricarle dal riepilogo pubblicato dall\'agente.</div>';
+    return;
+  }
+
+  /* interprete */
+  const box = document.createElement("section");
+  box.className = "flat";
+  box.innerHTML = '<h2>Scrivi o detta, poi lascia fare a me</h2>' +
+    '<textarea id="frase" rows="2" placeholder="Es. spesa all\'MD ieri 60,86 di cui 50 col ticket"></textarea>' +
+    '<div class="riga" style="margin-top:8px">' +
+    (vocaleDisponibile() ? '<button class="b" id="bmic" style="flex:0 0 108px;background:var(--navy)">🎤 Detta</button>' : '') +
+    '<button class="b" id="binterpreta" style="background:var(--goldsoft);color:var(--navy);border:1px solid var(--gold)">Interpreta</button>' +
+    '<button class="b sec" id="bannulla" style="flex:0 0 96px">Annulla</button></div>' +
+    '<div class="mini" style="margin-top:7px">' +
+    (vocaleDisponibile()
+      ? 'Premi Detta e parla: al termine interpreto da solo. In alternativa scrivi, o usa il microfono della tastiera.'
+      : 'Per dettare: tocca il campo e usa il microfono della tastiera del telefono.') + '</div>';
+  s.appendChild(box);
+
+  /* voci frequenti */
+  const freq = frequenti();
+  if (freq.length) {
+    const c = document.createElement("div"); c.className="chips";
+    freq.forEach(f => { const b=document.createElement("button"); b.className="chip"; b.textContent=f.etichetta;
+      b.onclick=()=>{ bozza.categoria=f.cat; bozza.sottocategoria=f.sub;
+        const ab=pagamentoAbituale(f.cat,f.sub); if(ab) bozza.pagamento=ab.metodo; disegna(); };
+      c.appendChild(b); });
+    s.appendChild(c);
+  }
+
+  /* modulo */
+  const f = document.createElement("section");
+  const subs = cats[bozza.categoria] || [];
+  f.innerHTML =
+    '<div class="campo"><label>IMPORTO €</label>' +
+    '<input id="valore" class="importo num" inputmode="decimal" placeholder="0,00" value="'+bozza.valore+'"></div>' +
+    '<div class="riga"><div class="campo"><label>CATEGORIA</label><select id="cat">' +
+      '<option value="">Scegli…</option>' +
+      Object.keys(cats).map(c=>'<option'+(c===bozza.categoria?' selected':'')+'>'+c+'</option>').join("") +
+    '</select></div>' +
+    '<div class="campo"><label>SOTTOCATEGORIA</label><select id="sub"'+(subs.length?'':' disabled')+'>' +
+      subs.map(x=>'<option'+(x===bozza.sottocategoria?' selected':'')+'>'+x+'</option>').join("") +
+    '</select></div></div>' +
+    '<div class="riga"><div class="campo"><label>DATA</label><input type="date" id="data" value="'+bozza.data+'"></div>' +
+    '<div class="campo"><label>TIPO</label><div class="seg">' +
+      '<button id="tOut" class="'+(bozza.inout==="Out"?"on":"")+'">Uscita</button>' +
+      '<button id="tIn" class="'+(bozza.inout==="In"?"on":"")+'">Entrata</button></div></div></div>' +
+    '<div class="campo"><label>PAGAMENTO'+(bozza.pagamento?'':' — obbligatorio')+'</label>' +
+      '<div class="chips" id="pag">' + CFG.pagamenti.map(p =>
+        '<button class="chip'+(p===bozza.pagamento?' on':'')+'" data-p="'+p+'">'+p+'</button>').join("") + '</div></div>' +
+    '<div class="campo"><label>DESCRIZIONE</label>' +
+      '<textarea id="desc" rows="2" placeholder="Cosa, dove, note">'+bozza.descrizione+'</textarea></div>' +
+    '<div class="campo"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);text-transform:none">' +
+      '<input type="checkbox" id="split" style="width:auto"'+(bozza.split?' checked':'')+'> Una parte pagata con Ticket Restaurant</label>' +
+      (bozza.split ? '<input id="ticket" class="num" inputmode="decimal" placeholder="quota ticket" value="'+bozza.ticket+'" style="margin-top:7px">' : '') +
+    '</div>' +
+    '<div id="anteprima"></div>' +
+    '<button class="b" id="salva">Salva spesa</button>';
+  s.appendChild(f);
+
+  /* comportamenti */
+  const q = id => document.getElementById(id);
+  const aggiorna = () => {
+    bozza.valore = q("valore").value; bozza.data = q("data").value;
+    bozza.descrizione = q("desc").value; if (q("ticket")) bozza.ticket = q("ticket").value;
+  };
+  q("valore").oninput = () => { bozza.valore = q("valore").value; mostraAnteprima(); };
+  q("desc").oninput = () => { bozza.descrizione = q("desc").value; };
+  q("data").onchange = () => { bozza.data = q("data").value; };
+  q("cat").onchange = () => { aggiorna(); bozza.categoria = q("cat").value;
+    bozza.sottocategoria = (cats[bozza.categoria]||[])[0] || "";
+    const ab = pagamentoAbituale(bozza.categoria, bozza.sottocategoria); if (ab) bozza.pagamento = ab.metodo;
+    bozza.inout = CFG.catEntrate.includes(bozza.categoria) ? "In" : "Out"; disegna(); };
+  q("sub").onchange = () => { aggiorna(); bozza.sottocategoria = q("sub").value;
+    const ab = pagamentoAbituale(bozza.categoria, bozza.sottocategoria); if (ab) bozza.pagamento = ab.metodo; disegna(); };
+  q("tOut").onclick = () => { aggiorna(); bozza.inout="Out"; disegna(); };
+  q("tIn").onclick  = () => { aggiorna(); bozza.inout="In"; disegna(); };
+  q("split").onchange = () => { aggiorna(); bozza.split = q("split").checked; disegna(); };
+  if (q("ticket")) q("ticket").oninput = () => { bozza.ticket = q("ticket").value; mostraAnteprima(); };
+  q("pag").querySelectorAll(".chip").forEach(b => b.onclick = () => { aggiorna(); bozza.pagamento = b.dataset.p; disegna(); });
+
+  q("bannulla").onclick = () => { bozza = null; fermaDettatura(); disegna(); };
+
+  if (q("bmic")) q("bmic").onclick = () => {
+    const b = q("bmic");
+    if (inAscolto) { fermaDettatura(); b.textContent = "🎤 Detta"; b.style.background = "var(--navy)"; return; }
+    avviaDettatura(
+      testo => { q("frase").value = testo; },                 // mentre parli
+      testo => {                                              // quando hai finito
+        b.textContent = "🎤 Detta"; b.style.background = "var(--navy)";
+        if (testo && testo.trim()) { q("frase").value = testo.trim(); q("binterpreta").click(); }
+      },
+      messaggio => { b.textContent = "🎤 Detta"; b.style.background = "var(--navy)"; avviso(messaggio, true); }
+    );
+    b.textContent = "● Ascolto"; b.style.background = "var(--red)";
+  };
+  q("binterpreta").onclick = () => {
+    const testo = q("frase").value.trim(); if (!testo) return;
+    const r = interpreta(testo);
+    bozza = { valore: r.valore!==null ? String(r.valore).replace(".",",") : "", categoria:r.categoria,
+      sottocategoria:r.sottocategoria, data:r.data, pagamento:r.pagamento, descrizione:r.descrizione,
+      inout:r.inout, split: r.quotaTicket!=null, ticket: r.quotaTicket!=null ? String(r.quotaTicket).replace(".",",") : "" };
+    disegna();
+    avviso(r.categoria ? "Proposta pronta: controlla e salva" : "Interpretato in parte: scegli la categoria");
+  };
+
+  function mostraAnteprima(){
+    const a = document.getElementById("anteprima"); if (!a) return;
+    const tot = importoDaTesto(bozza.valore), tk = importoDaTesto(bozza.ticket);
+    if (bozza.split && tot!==null && tk!==null && tk>0 && tk<tot) {
+      a.innerHTML = '<div class="avviso g"><b>Verranno salvate 2 righe</b><br>' +
+        '1 · Ticket Restaurant ' + euro(tk) + '<br>2 · ' + (bozza.pagamento||"da scegliere") + ' ' +
+        euro(Math.round((tot-tk)*100)/100) + '</div>';
+    } else a.innerHTML = "";
+  }
+  mostraAnteprima();
+
+  q("salva").onclick = () => {
+    aggiorna();
+    const v = importoDaTesto(bozza.valore);
+    if (v===null || v<=0) return avviso("Inserisci un importo valido", true);
+    if (!bozza.categoria || !bozza.sottocategoria) return avviso("Scegli categoria e sottocategoria", true);
+    if (!bozza.pagamento) return avviso("Scegli il mezzo di pagamento", true);
+    const base = { data:bozza.data, categoria:bozza.categoria, sottocategoria:bozza.sottocategoria,
+                   inout:bozza.inout, descrizione:bozza.descrizione.trim() };
+    const tk = importoDaTesto(bozza.ticket);
+    if (bozza.split && tk!==null && tk>0 && tk<v) {
+      salvaSpesa(Object.assign({}, base, { valore:tk, pagamento:"Ticket Restaurant" }));
+      salvaSpesa(Object.assign({}, base, { valore:Math.round((v-tk)*100)/100,
+        pagamento: bozza.pagamento==="Ticket Restaurant" ? "Visa" : bozza.pagamento }));
+      avviso("Salvate 2 righe");
+    } else {
+      salvaSpesa(Object.assign({}, base, { valore:v, pagamento:bozza.pagamento }));
+      avviso("Spesa salvata");
+    }
+    bozza = null; disegna();
+    sincronizza(true);
+  };
+}
+
+function frequenti(){
+  const c = {};
+  [...storico, ...coda].forEach(v => { const k=v.categoria+"|"+v.sottocategoria; c[k]=(c[k]||0)+3; });
+  (riepilogo && riepilogo.dettaglio || []).forEach(v => { const k=v.cat+"|"+v.sub; c[k]=(c[k]||0)+1; });
+  return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k]) => {
+    const [cat,sub] = k.split("|"); return { cat, sub, etichetta: sub==="Varie" ? cat+" varie" : sub };
+  });
+}
+
+/* ---------- REGISTRO ---------- */
+function schermoRegistro(s){
+  const tutte = [...coda.map(v=>Object.assign({},v,{inviata:false})), ...storico]
+    .sort((a,b)=> b.data.localeCompare(a.data) || (b.creatoIl||"").localeCompare(a.creatoIl||""));
+  if (!tutte.length) { s.innerHTML = '<div class="vuoto">Nessuna spesa registrata da questo dispositivo.</div>'; return; }
+
+  if (coda.length) {
+    const a = document.createElement("div"); a.className="avviso g";
+    a.innerHTML = '<b>'+coda.length+(coda.length===1?' spesa in attesa':' spese in attesa')+'</b> di essere inviate al ponte.';
+    s.appendChild(a);
+  }
+
+  let giorno = "";
+  let sez = null;
+  tutte.forEach(v => {
+    if (v.data !== giorno) {
+      giorno = v.data;
+      const h = document.createElement("div"); h.className="mini"; h.style.cssText="font-weight:700;padding:8px 2px 2px";
+      h.textContent = itData(v.data); s.appendChild(h);
+      sez = document.createElement("section"); sez.style.padding="4px 14px"; s.appendChild(sez);
+    }
+    const r = document.createElement("div"); r.className="voce";
+    r.innerHTML = '<span class="pallino" style="background:'+(v.inviata?"var(--green)":"var(--gold)")+'"></span>' +
+      '<div class="t"><div class="d">'+(v.descrizione||v.sottocategoria)+'</div>' +
+      '<div class="s">'+v.categoria+' · '+v.sottocategoria+' · '+v.pagamento+'</div></div>' +
+      '<div class="v num" style="color:'+(v.inout==="In"?"var(--green)":"var(--ink)")+'">' +
+      (v.inout==="In"?"+":"")+euro(v.valore)+'</div>';
+    if (!v.inviata) r.onclick = () => modaleModifica(v);
+    sez.appendChild(r);
+  });
+
+  const leg = document.createElement("div"); leg.className="mini"; leg.style.textAlign="center"; leg.style.marginTop="10px";
+  leg.innerHTML = '<span style="color:var(--gold)">●</span> in attesa &nbsp; <span style="color:var(--green)">●</span> inviata al master';
+  s.appendChild(leg);
+}
+
+function modaleModifica(v){
+  const cats = categorie();
+  const m = document.createElement("div"); m.className="modale";
+  const subs = cats[v.categoria] || [];
+  m.innerHTML = '<div class="box"><button class="x">✕</button><h2>Modifica spesa</h2>' +
+    '<div class="campo"><label>IMPORTO €</label><input id="mv" class="importo num" inputmode="decimal" value="'+String(v.valore).replace(".",",")+'"></div>' +
+    '<div class="riga"><div class="campo"><label>CATEGORIA</label><select id="mc">' +
+      Object.keys(cats).map(c=>'<option'+(c===v.categoria?' selected':'')+'>'+c+'</option>').join("") + '</select></div>' +
+    '<div class="campo"><label>SOTTOCATEGORIA</label><select id="ms">' +
+      subs.map(x=>'<option'+(x===v.sottocategoria?' selected':'')+'>'+x+'</option>').join("") + '</select></div></div>' +
+    '<div class="campo"><label>DATA</label><input type="date" id="md" value="'+v.data+'"></div>' +
+    '<div class="campo"><label>PAGAMENTO</label><div class="chips" id="mp">' +
+      CFG.pagamenti.map(p=>'<button class="chip'+(p===v.pagamento?' on':'')+'" data-p="'+p+'">'+p+'</button>').join("") + '</div></div>' +
+    '<div class="campo"><label>DESCRIZIONE</label><textarea id="mdesc" rows="2">'+(v.descrizione||"")+'</textarea></div>' +
+    '<div class="riga"><button class="b ghost" id="melimina" style="flex:0 0 110px;color:var(--red)">Elimina</button>' +
+    '<button class="b" id="msalva">Salva</button></div></div>';
+  document.body.appendChild(m);
+  const q = id => m.querySelector("#"+id);
+  let pag = v.pagamento;
+  m.querySelector(".x").onclick = () => m.remove();
+  m.onclick = e => { if (e.target===m) m.remove(); };
+  q("mc").onchange = () => { const nuove = cats[q("mc").value]||[];
+    q("ms").innerHTML = nuove.map(x=>'<option>'+x+'</option>').join(""); };
+  q("mp").querySelectorAll(".chip").forEach(b => b.onclick = () => {
+    pag = b.dataset.p; q("mp").querySelectorAll(".chip").forEach(x=>x.classList.remove("on")); b.classList.add("on"); });
+  q("melimina").onclick = () => { coda = coda.filter(x=>x.id!==v.id); scrivi(K.coda, coda); m.remove(); disegna(); avviso("Riga eliminata"); };
+  q("msalva").onclick = () => {
+    const nv = importoDaTesto(q("mv").value);
+    if (nv===null || nv<=0) return avviso("Importo non valido", true);
+    const i = coda.findIndex(x=>x.id===v.id); if (i<0) return m.remove();
+    coda[i] = Object.assign({}, coda[i], { valore:nv, categoria:q("mc").value, sottocategoria:q("ms").value,
+      data:q("md").value, pagamento:pag, descrizione:q("mdesc").value.trim() });
+    scrivi(K.coda, coda); m.remove(); disegna(); avviso("Riga aggiornata");
+  };
+}
+
+/* ---------- CRUSCOTTO ---------- */
+let vista = "mese", annoSel = new Date().getFullYear(), meseSel = new Date().getMonth()+1, apertaCat = null;
+function schermoMese(s){
+  if (!riepilogo) {
+    s.innerHTML = '<div class="avviso g">Nessun dato ancora. Vai su <b>Altro</b> e premi <b>Sincronizza</b>.</div>';
+    return;
+  }
+  const anni = [...new Set((riepilogo.voci||[]).map(v=>v.anno))].sort((a,b)=>b-a);
+  if (!anni.includes(annoSel)) annoSel = anni[0];
+  const meseYTD = annoSel === new Date().getFullYear() ? new Date().getMonth()+1 : 12;
+  const dentro = (a,m) => a===annoSel && (vista==="mese" ? m===meseSel : vista==="ytd" ? m<=meseYTD : true);
+
+  const act = {}, bdg = {};
+  const somma = (dove,cat,sub,val) => { dove[cat]=dove[cat]||{tot:0,subs:{}};
+    dove[cat].tot+=val; dove[cat].subs[sub]=(dove[cat].subs[sub]||0)+val; };
+  (riepilogo.voci||[]).forEach(v => { if (v.inout!=="Out" || !dentro(v.anno,v.mese)) return;
+    somma(v.tipo==="Bdg"?bdg:act, v.cat, v.sub, v.valore); });
+  // le spese non ancora nel master si sommano al consuntivo
+  coda.forEach(v => { if (v.inout!=="Out") return;
+    const a=+v.data.slice(0,4), m=+v.data.slice(5,7); if(!dentro(a,m)) return;
+    somma(act, v.categoria, v.sottocategoria, v.valore); });
+
+  const righe = [...new Set([...Object.keys(act), ...Object.keys(bdg)])]
+    .map(c => ({cat:c, act:(act[c]||{}).tot||0, bdg:(bdg[c]||{}).tot||0}))
+    .sort((a,b)=>a.cat.localeCompare(b.cat,"it"));
+  const tA = righe.reduce((x,r)=>x+r.act,0), tB = righe.reduce((x,r)=>x+r.bdg,0);
+  const periodo = vista==="mese" ? MESI[meseSel-1]+" "+annoSel
+    : vista==="ytd" ? "Gen–"+MESI[meseYTD-1].slice(0,3)+" "+annoSel : "Anno "+annoSel;
+
+  /* selettori */
+  const sel = document.createElement("div"); sel.style.marginBottom="12px";
+  sel.innerHTML = '<div class="riga" style="margin-bottom:8px">' +
+    '<select id="anno" style="flex:0 0 100px">'+anni.map(a=>'<option'+(a===annoSel?' selected':'')+'>'+a+'</option>').join("")+'</select>' +
+    '<div class="seg">' + [["mese","Mese"],["ytd","YTD"],["anno","Anno"]].map(([k,t]) =>
+      '<button data-v="'+k+'" class="'+(vista===k?"on":"")+'">'+t+'</button>').join("") + '</div></div>' +
+    (vista==="mese" ? '<select id="mese">'+MESI.map((m,i)=>'<option value="'+(i+1)+'"'+(i+1===meseSel?' selected':'')+'>'+m+'</option>').join("")+'</select>' : '');
+  s.appendChild(sel);
+  sel.querySelectorAll(".seg button").forEach(b => b.onclick = () => { vista=b.dataset.v; apertaCat=null; disegna(); });
+  sel.querySelector("#anno").onchange = e => { annoSel=+e.target.value; apertaCat=null; disegna(); };
+  if (sel.querySelector("#mese")) sel.querySelector("#mese").onchange = e => { meseSel=+e.target.value; apertaCat=null; disegna(); };
+
+  /* totale */
+  const t = document.createElement("section"); t.className="dark";
+  t.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline">' +
+    '<div><div class="eyebrow">'+periodo.toUpperCase()+'</div>' +
+    '<div class="num" style="font-size:30px;font-weight:700;margin-top:2px">'+euro(tA)+'</div></div>' +
+    (tB>0 ? '<div style="text-align:right"><div style="color:var(--ice);font-size:12px">budget '+euro(tB)+'</div>' +
+      '<div class="num" style="font-weight:700;font-size:17px;color:'+(tA>tB?"#FF9B9B":"#8FE3B0")+'">' +
+      (tA>tB?"+":"−")+euro(Math.abs(tB-tA))+'</div></div>' : '') + '</div>' +
+    (tB>0 ? '<div class="barra" style="background:rgba(255,255,255,.18);margin-top:10px"><i style="width:' +
+      Math.min(100,(tA/tB)*100)+'%;background:'+(tA>tB?"#FF9B9B":"#8FE3B0")+'"></i></div>' : '');
+  s.appendChild(t);
+
+  /* elenco */
+  const e = document.createElement("section");
+  if (!apertaCat) {
+    e.innerHTML = '<h2>Actual vs Budget per categoria</h2>';
+    if (!righe.length) e.innerHTML += '<div class="vuoto">Nessun dato nel periodo.</div>';
+    righe.forEach(r => {
+      const over = r.bdg>0 && r.act>r.bdg;
+      const pct = r.bdg>0 ? Math.min(100,(r.act/r.bdg)*100) : 100;
+      const d = document.createElement("div");
+      d.style.cssText = "padding:9px 0;border-top:1px solid var(--panel);cursor:pointer";
+      d.innerHTML = '<div class="tot"><span>'+r.cat+' ›</span><b class="num">'+euro(r.act) +
+        (r.bdg>0?'<span style="font-weight:400;color:var(--mute)"> / '+euro(r.bdg)+'</span>':'')+'</b></div>' +
+        '<div class="barra"><i style="width:'+Math.max(3,pct)+'%;background:'+(over?"var(--red)":r.bdg>0?"var(--green)":"var(--navy)")+'"></i></div>' +
+        (r.bdg>0 ? '<div class="mini num" style="color:'+(over?"var(--red)":"var(--green)")+';margin-top:2px">' +
+          (over ? "sforamento "+euro(r.act-r.bdg) : "residuo "+euro(r.bdg-r.act))+'</div>' : '');
+      d.onclick = () => { apertaCat = r.cat; disegna(); };
+      e.appendChild(d);
+    });
+  } else {
+    e.innerHTML = '<h2>← '+apertaCat+'</h2>';
+    e.querySelector("h2").style.cursor="pointer";
+    e.querySelector("h2").onclick = () => { apertaCat=null; disegna(); };
+    const sA = (act[apertaCat]||{subs:{}}).subs, sB = (bdg[apertaCat]||{subs:{}}).subs;
+    const chiavi = [...new Set([...Object.keys(sA), ...Object.keys(sB)])]
+      .map(k=>({sub:k, act:sA[k]||0, bdg:sB[k]||0})).sort((a,b)=>a.sub.localeCompare(b.sub,"it"));
+    chiavi.forEach(r => {
+      const over = r.bdg>0 && r.act>r.bdg;
+      const d = document.createElement("div"); d.style.cssText="padding:9px 0;border-top:1px solid var(--panel)";
+      d.innerHTML = '<div class="tot"><span>'+r.sub+'</span><b class="num">'+euro(r.act) +
+        (r.bdg>0?'<span style="font-weight:400;color:var(--mute)"> / '+euro(r.bdg)+'</span>':'')+'</b></div>' +
+        '<div class="barra"><i style="width:'+Math.max(3, r.bdg>0?Math.min(100,(r.act/r.bdg)*100):100) +
+        '%;background:'+(over?"var(--red)":r.bdg>0?"var(--green)":"var(--navy)")+'"></i></div>';
+      e.appendChild(d);
+    });
+  }
+  s.appendChild(e);
+
+  const n = document.createElement("div"); n.className="mini";
+  n.textContent = "Dati dal master, aggiornati al " + (riepilogo.generatoIl||"").replace("T"," ").slice(0,16) +
+    (coda.length ? ". Comprese le "+coda.length+" spese non ancora trasferite." : ".");
+  s.appendChild(n);
+}
+
+/* ---------- ALTRO ---------- */
+function schermoAltro(s){
+  /* stato agente */
+  const a = document.createElement("section");
+  let testo = "Stato sconosciuto: premi Sincronizza.", classe = "avviso g";
+  if (statoAgente && statoAgente.vivo) {
+    const diff = (Date.now() - new Date(statoAgente.vivo).getTime())/60000;
+    if (diff < 3) { testo = "Agente attivo sul PC, ultimo controllo alle " + statoAgente.vivo.slice(11,16) + "."; classe="avviso v"; }
+    else testo = "L'agente non dà notizie da " + Math.round(diff) + " minuti: il PC è probabilmente spento. " +
+                 "Le spese restano in coda e verranno scritte alla riaccensione.";
+  }
+  a.innerHTML = '<h2>Collegamento</h2><div class="'+classe+'">'+testo+'</div>' +
+    '<button class="b" id="bsinc">Sincronizza ora</button>' +
+    '<div class="mini" style="margin-top:8px">Invia le spese in attesa e riscarica il riepilogo dal master.</div>';
+  s.appendChild(a);
+  document.getElementById("bsinc").onclick = async (ev) => {
+    ev.target.disabled = true; ev.target.textContent = "Sincronizzo…";
+    await sincronizza(false);
+  };
+
+  /* dati */
+  const d = document.createElement("section");
+  const nVoci = riepilogo ? (riepilogo.righe||0) : 0;
+  d.innerHTML = '<h2>Dati</h2>' +
+    '<table><tr><td>Spese in attesa di invio</td><td class="r num">'+coda.length+'</td></tr>' +
+    '<tr><td>Righe nel master</td><td class="r num">'+nIt(nVoci,0)+'</td></tr>' +
+    '<tr><td>Anni disponibili</td><td class="r num">'+(riepilogo ? (riepilogo.anni||[]).length : 0)+'</td></tr>' +
+    '<tr><td>Riepilogo aggiornato al</td><td class="r">'+(riepilogo ? (riepilogo.generatoIl||"").replace("T"," ").slice(0,16) : "—")+'</td></tr>' +
+    '</table>' +
+    '<div class="riga" style="margin-top:10px">' +
+    '<button class="b ghost" id="bback">Scarica copia</button>' +
+    '<button class="b ghost" id="bsvuota" style="color:var(--red)">Svuota coda</button></div>';
+  s.appendChild(d);
+  document.getElementById("bback").onclick = () => {
+    const blob = new Blob([JSON.stringify({coda, storico, cfg:CFG}, null, 1)], {type:"application/json"});
+    const u = URL.createObjectURL(blob); const link = document.createElement("a");
+    link.href = u; link.download = "spese3_copia_"+oggiISO()+".json"; link.click();
+    setTimeout(()=>URL.revokeObjectURL(u), 3000);
+  };
+  let conferma = false;
+  document.getElementById("bsvuota").onclick = (ev) => {
+    if (!conferma) { conferma = true; ev.target.textContent = "Confermi?"; return; }
+    coda = []; scrivi(K.coda, coda); disegna(); avviso("Coda svuotata");
+  };
+
+  /* configurazione */
+  const c = document.createElement("section");
+  c.innerHTML = '<h2>Configurazione</h2>' +
+    '<div class="campo"><label>INDIRIZZO DEL PONTE</label><input id="cponte" value="'+CFG.ponte+'"></div>' +
+    '<div class="campo"><label>CHIAVE</label><input id="ctoken" value="'+CFG.token+'"></div>' +
+    '<div class="campo"><label>MEZZI DI PAGAMENTO (separati da virgola)</label>' +
+      '<input id="cpag" value="'+CFG.pagamenti.join(", ")+'"></div>' +
+    '<button class="b sec" id="csalva">Salva configurazione</button>';
+  s.appendChild(c);
+  document.getElementById("csalva").onclick = () => {
+    CFG.ponte = document.getElementById("cponte").value.trim();
+    CFG.token = document.getElementById("ctoken").value.trim();
+    CFG.pagamenti = document.getElementById("cpag").value.split(",").map(x=>x.trim()).filter(Boolean);
+    scrivi(K.cfg, CFG); avviso("Configurazione salvata"); disegna();
+  };
+}
+
+/* ---------- avvio ---------- */
+disegna();
+if (navigator.onLine) sincronizza(true);
+window.addEventListener("online", () => sincronizza(true));
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
