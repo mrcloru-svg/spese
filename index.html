@@ -332,9 +332,10 @@ function parolaNumero(w){
   return null;
 }
 
-/* "centotrentatré e cinquanta" → 133,50 · "settantacinque zero uno" → 75,01
-   "centotrentatré euro cinquanta centesimi" → 133,50 */
-function numeroDaParole(testo){
+/* "centotrentatré e cinquanta" → [133,50] · "settantacinque zero uno" → [75,01]
+   "centotrentatré euro cinquanta centesimi" → [133,50]
+   "quarantacinque di cui venti con ticket" → [45, 20] */
+function importiDaParole(testo){
   const SEP  = {e:1,ed:1,virgola:1,con:1,euro:1};              // legano euro e centesimi
   const CENT = {centesimi:1,centesimo:1,cent:1,cents:1};       // dichiarano i centesimi
   const p = senzaAccenti(testo.toLowerCase()).replace(/[^a-z ]/g," ").split(/\s+/).filter(Boolean);
@@ -357,17 +358,27 @@ function numeroDaParole(testo){
   };
 
   if (gruppi.length === 1 && CENT[gruppi[0].dopo])            // "cinquanta centesimi"
-    return Math.round(valore(gruppi[0]))/100;
+    return [Math.round(valore(gruppi[0]))/100];
 
+  /* Importi DISTINTI, non un totale solo: serve per lo sdoppiamento del ticket,
+     dove la frase ne contiene due ("quarantacinque di cui venti con ticket"). */
+  const importi = [];
   let tot = valore(gruppi[0]);
   for (let i=1;i<gruppi.length;i++){
     const g = gruppi[i], v = valore(g);
     const sonoCentesimi = (CENT[g.dopo] || g.sep) && v < 100;
     if (sonoCentesimi)            tot = tot + v/100;        // "e cinquanta", "cinquanta centesimi"
     else if (g.sep && v < tot)    tot = tot + v;            // "mille e duecento"
-    else                          tot = Math.max(tot, v);
+    else { importi.push(tot); tot = v; }                    // importo nuovo, a sé stante
   }
-  return Math.round(tot*100)/100;
+  importi.push(tot);
+  return importi.map(x => Math.round(x*100)/100);
+}
+
+/* L'importo singolo: il più grande fra quelli trovati. */
+function numeroDaParole(testo){
+  const v = importiDaParole(testo);
+  return (v && v.length) ? Math.max.apply(null, v) : null;
 }
 function interpreta(testo){
   const t = " " + testo.toLowerCase().trim() + " ";
@@ -392,7 +403,23 @@ function interpreta(testo){
       r.valore = ord[0]; r.quotaTicket = ord[1];
     }
   }
-  if (r.valore === null) { const n = numeroDaParole(t); if (n) r.valore = Math.round(n*100)/100; }
+  // niente cifre: si leggono i numeri scritti a parole, anche più d'uno
+  if (r.valore === null) {
+    const v = importiDaParole(t).filter(x => x > 0);
+    if (v.length) {
+      const ord = v.slice().sort((a,b)=>b-a);
+      r.valore = ord[0];
+      if (ord.length > 1 && /ticket|buoni pasto|buono pasto/.test(t)) r.quotaTicket = ord[1];
+    }
+  }
+  // ticket dichiarato ma trovato un solo importo in cifre: la quota può essere
+  // a parole ("45,30 di cui venti col ticket"). Si cerca solo con "di cui",
+  // altrimenti un "per due" nella descrizione verrebbe scambiato per un importo.
+  if (r.valore !== null && r.quotaTicket === null &&
+      /ticket|buoni pasto|buono pasto/.test(t) && /di cui/.test(t)) {
+    const v = importiDaParole(t).filter(x => x > 0 && Math.abs(x - r.valore) > 0.001);
+    if (v.length) r.quotaTicket = Math.max.apply(null, v);
+  }
 
   // data relativa
   const d = new Date();
@@ -446,7 +473,7 @@ function interpreta(testo){
 /* Da alzare a ogni modifica. Compare in alto nell'intestazione e in Altro >
    Dati: è il modo immediato per sapere se il dispositivo sta usando la versione
    nuova o una copia rimasta in cache. */
-const VERSIONE = "3.0.4";
+const VERSIONE = "3.0.5";
 const VERSIONE_DATA = "25/10/2026";
 
 const PAUSA_FINE = 2500;   // silenzio dopo cui si considera finita la frase
