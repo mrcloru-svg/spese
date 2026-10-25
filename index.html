@@ -380,45 +380,51 @@ function numeroDaParole(testo){
   const v = importiDaParole(testo);
   return (v && v.length) ? Math.max.apply(null, v) : null;
 }
+
+/* L'importo di un pezzo di frase, in cifre o a parole. Le forme con euro e
+   centesimi staccati vengono riconosciute per prime, altrimenti "56 e 44"
+   verrebbe letto come due importi distinti invece che come 56,44. */
+function importoDaFrase(s){
+  let m = s.match(/\b(\d{1,6})\s*(?:€|euro)\s+(\d{1,2})\s*cent/)      // 56 euro 44 centesimi
+       || s.match(/\b(\d{1,6})\s+(?:e|ed|virgola)\s+(\d{1,2})\b/)      // 56 e 44
+       || s.match(/\b(\d{1,6})\s+(\d{2})\s*(?:€|euro)\b/);             // 56 44 euro
+  if (m) return Math.round(parseFloat(m[1] + "." + String(m[2]).padStart(2,"0"))*100)/100;
+
+  const cifre = s.match(/\d+[.,]\d{1,2}|\d+/g);
+  if (cifre) {
+    const v = cifre.map(importoDaTesto).filter(x => x !== null && x > 0);
+    if (v.length) return Math.max.apply(null, v);
+  }
+  const p = importiDaParole(s).filter(x => x > 0);
+  return p.length ? Math.max.apply(null, p) : null;
+}
 function interpreta(testo){
   const t = " " + testo.toLowerCase().trim() + " ";
   const r = { valore:null, data:oggiISO(), categoria:"", sottocategoria:"", pagamento:"",
               descrizione:testo.trim(), inout:"Out", quotaTicket:null };
 
-  // euro e centesimi dettati staccati: "133 50 euro", "133 e 50 euro",
-  // "133 euro 50 centesimi", "133 virgola 50"
-  let presoInCifre = false;
-  if (!/ticket|buoni pasto/.test(t)) {
-    const sp = t.match(/\b(\d{1,6})\s*(?:€|euro)\s+(\d{1,2})\s*cent/)
-            || t.match(/\b(\d{1,6})\s+(?:e\s+|virgola\s+)?(\d{2})\s*(?:€|euro)\b/);
-    if (sp) { r.valore = parseFloat(sp[1] + "." + String(sp[2]).padStart(2,"0")); presoInCifre = true; }
-  }
-  // importo in cifre: 60,86 / 60.86 / 60
-  const cifre = presoInCifre ? null : t.match(/(\d+[.,]\d{1,2}|\d+)\s*(?:€|euro)?/g);
-  if (cifre && cifre.length) {
-    const valori = cifre.map(x => importoDaTesto(x.replace(/[^\d.,]/g,""))).filter(v => v!==null && v>0);
-    if (valori.length) r.valore = Math.max(...valori);
-    if (valori.length > 1 && /ticket|buoni pasto/.test(t)) {
-      const ord = valori.slice().sort((a,b)=>b-a);
-      r.valore = ord[0]; r.quotaTicket = ord[1];
+  /* L'importo si legge PRIMA del "di cui": quello che viene dopo è la quota
+     ticket. La quota non si riconosce dalla grandezza — in "56 e 44 di cui
+     37,50 ticket" il secondo numero più grande è 44, che sono i centesimi —
+     ma dalla posizione nella frase. */
+  const haTicket = /ticket|buoni pasto|buono pasto/.test(t);
+  const parti = t.split(/\bdi cui\b/);
+  const parteTotale = parti[0];
+  const parteQuota  = parti.length > 1 ? parti.slice(1).join(" ") : "";
+
+  r.valore = importoDaFrase(parteTotale);
+  if (r.valore === null) r.valore = importoDaFrase(t);
+
+  if (haTicket && r.valore !== null) {
+    let q = parteQuota ? importoDaFrase(parteQuota) : null;
+    if (q === null) {
+      // niente "di cui": si prende il numero accanto alla parola ticket
+      const m = t.match(/(?:ticket|buoni pasto|buono pasto)\s*(?:restaurant)?\s*(?:€\s*)?(\d+(?:[.,]\d{1,2})?)/)
+             || t.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:€|euro)?\s+(?:col|con|in)\s+(?:il\s+|i\s+)?(?:ticket|buoni pasto|buono pasto)/);
+      if (m) q = importoDaTesto(m[1]);
     }
-  }
-  // niente cifre: si leggono i numeri scritti a parole, anche più d'uno
-  if (r.valore === null) {
-    const v = importiDaParole(t).filter(x => x > 0);
-    if (v.length) {
-      const ord = v.slice().sort((a,b)=>b-a);
-      r.valore = ord[0];
-      if (ord.length > 1 && /ticket|buoni pasto|buono pasto/.test(t)) r.quotaTicket = ord[1];
-    }
-  }
-  // ticket dichiarato ma trovato un solo importo in cifre: la quota può essere
-  // a parole ("45,30 di cui venti col ticket"). Si cerca solo con "di cui",
-  // altrimenti un "per due" nella descrizione verrebbe scambiato per un importo.
-  if (r.valore !== null && r.quotaTicket === null &&
-      /ticket|buoni pasto|buono pasto/.test(t) && /di cui/.test(t)) {
-    const v = importiDaParole(t).filter(x => x > 0 && Math.abs(x - r.valore) > 0.001);
-    if (v.length) r.quotaTicket = Math.max.apply(null, v);
+    // una parte non può superare il totale: è il controllo che salva dagli scambi
+    if (q !== null && q > 0 && q < r.valore) r.quotaTicket = q;
   }
 
   // data relativa
@@ -473,7 +479,7 @@ function interpreta(testo){
 /* Da alzare a ogni modifica. Compare in alto nell'intestazione e in Altro >
    Dati: è il modo immediato per sapere se il dispositivo sta usando la versione
    nuova o una copia rimasta in cache. */
-const VERSIONE = "3.0.5";
+const VERSIONE = "3.0.6";
 const VERSIONE_DATA = "25/10/2026";
 
 const PAUSA_FINE = 2500;   // silenzio dopo cui si considera finita la frase
