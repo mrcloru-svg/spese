@@ -499,7 +499,7 @@ function interpreta(testo){
 /* Da alzare a ogni modifica. Compare in alto nell'intestazione e in Altro >
    Dati: è il modo immediato per sapere se il dispositivo sta usando la versione
    nuova o una copia rimasta in cache. */
-const VERSIONE = "3.4.0";
+const VERSIONE = "3.4.1";
 const VERSIONE_DATA = "25/10/2026";
 
 const PAUSA_FINE = 2500;   // silenzio dopo cui si considera finita la frase
@@ -1292,6 +1292,9 @@ let rimbFiltro = "da fare", rimbAperta = null, rimbPasso = null;
 const ORDINE_STATI = ["da richiedere","attesa FASI","da chiedere ad AON","attesa AON",
                       "chiusa con residuo","chiusa","non richiedibile"];
 const DA_FARE = ["da richiedere","attesa FASI","da chiedere ad AON","attesa AON"];
+/* Fra le pratiche aperte, queste due aspettano una mossa TUA: nelle altre
+   hai già chiesto e stai solo aspettando. È la stessa distinzione dei colori. */
+const TOCCA_A_TE = ["da richiedere","da chiedere ad AON"];
 
 const giorniDa = (iso) => iso ? Math.round((Date.now() - new Date(iso).getTime())/86400000) : null;
 
@@ -1364,11 +1367,26 @@ function schermoRimborsi(s){
   /* riepilogo e filtri */
   const t = document.createElement("section");
   const daFare = tutte.filter(p => DA_FARE.indexOf(p.stato) >= 0);
-  const inGioco = daFare.reduce((a,p) => a + (p.residuo||0), 0);
+  const tocca  = daFare.filter(p => TOCCA_A_TE.indexOf(p.stato) >= 0);
+  const attesa = daFare.filter(p => TOCCA_A_TE.indexOf(p.stato) < 0);
+  const eTuo   = euro(tocca.reduce((a,p) => a + (p.residuo||0), 0));
+  const eLoro  = euro(attesa.reduce((a,p) => a + (p.residuo||0), 0));
+  let cartello, tono;
+  if (tocca.length) {
+    tono = "g";
+    cartello = '<b>' + (tocca.length === 1 ? '1 pratica aspetta te'
+                                           : tocca.length + ' pratiche aspettano te') +
+               ', per ' + eTuo + '.</b>' +
+               (attesa.length ? ' Altri ' + eLoro + ' in attesa di risposta.' : '');
+  } else if (attesa.length) {
+    tono = "v";
+    cartello = '<b>Nessuna mossa da fare.</b> ' + eLoro + ' in attesa di risposta.';
+  } else {
+    tono = "v";
+    cartello = 'Nessuna pratica in sospeso.';
+  }
   t.innerHTML = '<h2>Pratiche</h2>' +
-    '<div class="avviso '+(daFare.length?"g":"v")+'">' +
-      (daFare.length ? daFare.length+' pratiche richiedono una mossa, per '+euro(inGioco)+' ancora recuperabili.'
-                     : 'Nessuna pratica in sospeso.') + '</div>' +
+    '<div class="avviso '+tono+'">' + cartello + '</div>' +
     '<div class="chips" id="filtri" style="margin-top:10px">' +
       '<button class="chip'+(rimbFiltro==="da fare"?' on':'')+'" data-f="da fare">Da fare ('+daFare.length+')</button>' +
       ORDINE_STATI.filter(x=>perStato[x]).map(x =>
