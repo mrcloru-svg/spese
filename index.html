@@ -99,7 +99,7 @@
 <header>
   <div class="wrap">
     <div>
-      <div class="eyebrow">SPESE 3.0</div>
+      <div class="eyebrow">SPESE <span id="etichettaVersione">3.0</span></div>
       <h1 id="titolo">Registra una spesa</h1>
     </div>
     <div class="stato">
@@ -435,11 +435,22 @@ function interpreta(testo){
 /* ---------- dettatura vocale del browser ----------
    Funziona in Chrome su PC e Android. Su iPhone il riconoscimento non è
    disponibile: lì si usa il microfono della tastiera, che scrive nel campo. */
+/* Da alzare a ogni modifica. Compare in alto nell'intestazione e in Altro >
+   Dati: è il modo immediato per sapere se il dispositivo sta usando la versione
+   nuova o una copia rimasta in cache. */
+const VERSIONE = "3.0.3";
+const VERSIONE_DATA = "25/10/2026";
+
 const PAUSA_FINE = 2500;   // silenzio dopo cui si considera finita la frase
 const DURATA_MAX = 45000;  // limite di sicurezza complessivo
 
 let riconoscitore = null, inAscolto = false;
-let testoFinale = "", timerSilenzio = null, timerMax = null, chiusuraVoluta = false;
+/* testoBase = quanto confermato nelle sessioni precedenti (il browser chiude e
+   riapre il riconoscitore da solo); sessione = quanto detto in quella in corso,
+   sempre RICOSTRUITO e mai sommato. Su Android Chrome rimanda a ogni evento la
+   trascrizione intera dall'inizio: sommandola si otterrebbe una valanga. */
+let testoBase = "", sessione = "";
+let timerSilenzio = null, timerMax = null, chiusuraVoluta = false;
 
 function vocaleDisponibile(){
   return typeof window !== "undefined" &&
@@ -455,7 +466,7 @@ function avviaDettatura(mentreParla, allaFine, suErrore){
   const R = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!R) return suErrore("Dettatura non disponibile in questo browser");
   try {
-    testoFinale = ""; chiusuraVoluta = false; inAscolto = true;
+    testoBase = ""; sessione = ""; chiusuraVoluta = false; inAscolto = true;
     riconoscitore = new R();
     riconoscitore.lang = "it-IT";
     riconoscitore.continuous = true;      // non si chiude alla prima pausa
@@ -471,12 +482,15 @@ function avviaDettatura(mentreParla, allaFine, suErrore){
     };
 
     riconoscitore.onresult = ev => {
-      let provvisorio = "";
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      // Si riparte SEMPRE da capo sull'elenco dei risultati: quello che il
+      // browser manda è già il testo completo della sessione, non un pezzo.
+      let finali = "", provvisorio = "";
+      for (let i = 0; i < ev.results.length; i++) {
         const t = ev.results[i][0].transcript;
-        if (ev.results[i].isFinal) testoFinale += t + " "; else provvisorio += t;
+        if (ev.results[i].isFinal) finali += t + " "; else provvisorio += t;
       }
-      mentreParla((testoFinale + provvisorio).trim());
+      sessione = finali;
+      mentreParla((testoBase + sessione + provvisorio).trim());
       rimandaChiusura();   // il conto alla rovescia riparte a ogni parola
     };
 
@@ -492,8 +506,12 @@ function avviaDettatura(mentreParla, allaFine, suErrore){
     riconoscitore.onend = () => {
       // Il browser chiude la sessione anche da solo: se non è stata una
       // chiusura voluta, si riparte senza perdere quanto già detto.
-      if (!chiusuraVoluta && inAscolto) { try { riconoscitore.start(); return; } catch(e){} }
-      inAscolto = false; azzeraTimer(); allaFine(testoFinale.trim());
+      if (!chiusuraVoluta && inAscolto) {
+        testoBase = (testoBase + sessione);   // si mette al sicuro e si riparte puliti
+        sessione = "";
+        try { riconoscitore.start(); return; } catch(e){}
+      }
+      inAscolto = false; azzeraTimer(); allaFine((testoBase + sessione).trim());
     };
 
     riconoscitore.start();
@@ -986,6 +1004,7 @@ function schermoAltro(s){
     '<tr><td>Righe nel master</td><td class="r num">'+nIt(nVoci,0)+'</td></tr>' +
     '<tr><td>Anni disponibili</td><td class="r num">'+(riepilogo ? (riepilogo.anni||[]).length : 0)+'</td></tr>' +
     '<tr><td>Riepilogo aggiornato al</td><td class="r">'+(riepilogo ? (riepilogo.generatoIl||"").replace("T"," ").slice(0,16) : "—")+'</td></tr>' +
+    '<tr><td>Versione dell\'app</td><td class="r">'+VERSIONE+' — '+VERSIONE_DATA+'</td></tr>' +
     '</table>' +
     '<div class="riga" style="margin-top:10px">' +
     '<button class="b ghost" id="bback">Scarica copia</button>' +
@@ -1021,6 +1040,10 @@ function schermoAltro(s){
 }
 
 /* ---------- avvio ---------- */
+(function mostraVersione(){
+  const e = document.getElementById("etichettaVersione");
+  if (e) e.textContent = VERSIONE;
+})();
 disegna();
 if (navigator.onLine) sincronizza(true);
 window.addEventListener("online", () => sincronizza(true));
