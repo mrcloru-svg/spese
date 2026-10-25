@@ -9,7 +9,7 @@
 
    Il numero di versione va aumentato a ogni modifica di questo file: al cambio
    di nome la cache vecchia viene buttata e ricostruita. */
-const CACHE = "spese3-v2";
+const CACHE = "spese3-v3";
 const FILE = ["./", "./index.html", "./manifest.json", "./icona-192.png", "./icona-512.png"];
 
 self.addEventListener("install", e => {
@@ -31,9 +31,11 @@ self.addEventListener("fetch", e => {
                   url.pathname.endsWith("index.html");
 
   if (ePagina) {
-    // prima la rete: così le versioni nuove arrivano da sole
+    // Prima la rete, SALTANDO la cache del browser: GitHub Pages dichiara la
+    // pagina valida per dieci minuti, e senza no-store la richiesta verrebbe
+    // soddisfatta dalla copia vecchia senza nemmeno uscire dal telefono.
     e.respondWith(
-      fetch(e.request).then(res => {
+      fetch(url.href, { cache: "no-store" }).then(res => {
         const copia = res.clone();
         caches.open(CACHE).then(c => c.put("./index.html", copia)).catch(()=>{});
         return res;
