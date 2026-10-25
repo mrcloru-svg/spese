@@ -496,7 +496,7 @@ function interpreta(testo){
 /* Da alzare a ogni modifica. Compare in alto nell'intestazione e in Altro >
    Dati: è il modo immediato per sapere se il dispositivo sta usando la versione
    nuova o una copia rimasta in cache. */
-const VERSIONE = "3.1.0";
+const VERSIONE = "3.1.1";
 const VERSIONE_DATA = "25/10/2026";
 
 const PAUSA_FINE = 2500;   // silenzio dopo cui si considera finita la frase
@@ -1172,7 +1172,8 @@ function schermoVoci(s){
       html += '</div>' +
         '<div class="riga" style="margin-top:8px">' +
           '<input id="ns-'+c.id+'" placeholder="Nuova sottocategoria per '+c.nome+'">' +
-          '<button class="b ghost" style="flex:0 0 auto" data-nuovasub="'+c.id+'">Aggiungi</button></div>' +
+          '<button class="b ghost" style="flex:0 0 auto;width:auto;padding:13px 18px" ' +
+            'data-nuovasub="'+c.id+'">Aggiungi</button></div>' +
         '<button class="b ghost" style="margin-top:8px" data-spegni="'+c.id+'">' +
           (c.attiva ? 'Disattiva questa categoria' : 'Riattiva questa categoria') + '</button>' +
         '<div class="mini" style="margin-top:6px">Per vedere tutte le sottocategorie disponibili, ' +
@@ -1185,7 +1186,7 @@ function schermoVoci(s){
   const nuova = document.createElement("section");
   nuova.innerHTML = '<h2>Nuova categoria</h2>' +
     '<div class="riga"><input id="ncat" placeholder="Nome della categoria">' +
-    '<button class="b ghost" style="flex:0 0 auto" id="bncat">Crea</button></div>' +
+    '<button class="b ghost" style="flex:0 0 auto;width:auto;padding:13px 18px" id="bncat">Crea</button></div>' +
     '<div class="mini" style="margin-top:6px">Nasce con la sola sottocategoria Varie: ' +
     'le altre si aggiungono aprendola qui sopra.</div>';
   s.appendChild(nuova);
