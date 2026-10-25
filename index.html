@@ -127,7 +127,7 @@ const CFG_PREDEFINITA = {
   ponte: "",
   token: "",
   pagamenti: ["Visa","Addebito banca","Ticket Restaurant","Contanti","Bancomat","Bonifico","Mastercard"],
-  catEntrate: ["Entrate dividendi","Rimborso Fasi e Assicurazione","Rimborso tasse","Stipendio"]
+  catEntrate: []   // ricavate dai dati: vedi categorieEntrata()
 };
 
 const K = { cfg:"spese3-cfg", coda:"spese3-coda", storico:"spese3-storico", riep:"spese3-riepilogo", abit:"spese3-abitudini" };
@@ -154,7 +154,14 @@ const oggiISO = () => { const d=new Date();
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
 const itData = (iso) => { const [a,m,g]=iso.split("-"); return g+"/"+m+"/"+a; };
 const importoDaTesto = (s) => { if(typeof s==="number") return s;
-  const n = parseFloat(String(s).replace(/\./g,"").replace(",",".")); return isNaN(n)?null:Math.round(n*100)/100; };
+  // L'ultimo separatore vale come decimale se seguito da una o due cifre ("133.50",
+  // "133,50"); altrimenti punti e virgole sono separatori di migliaia ("1.234").
+  let t = String(s).trim().replace(/[^\d.,]/g,"");
+  if (!t) return null;
+  const m = t.match(/[.,](\d{1,2})$/);
+  if (m) t = t.slice(0, t.length-m[0].length).replace(/[.,]/g,"") + "." + m[1];
+  else   t = t.replace(/[.,]/g,"");
+  const n = parseFloat(t); return isNaN(n)?null:Math.round(n*100)/100; };
 
 /* ---------- categorie ricavate dal riepilogo ---------- */
 function categorie(){
@@ -189,40 +196,186 @@ function pagamentoAbituale(cat, sub){
   return null;
 }
 
+/* ---------- concetti di spesa (generici, nessun dato personale) ----------
+   A sinistra le parole che una persona può pronunciare; a destra i frammenti
+   da cercare nei NOMI delle sottocategorie di chi usa l'app, quali che siano. */
+const CONCETTI = [
+  [/benzina|gasolio|carburante|rifornimento|distributore|diesel/, ["carburant","benzina"]],
+  [/ricarica elettric|colonnina/,                                  ["elettric"]],
+  [/supermercat|\bspesa\b|discount|alimentari|drogheria/,          ["spesa","cibo","aliment"]],
+  [/pranzo|cena|ristorante|pizzeria|trattoria|\bbar\b|colazione|caff|aperitivo|sushi/, ["mangiare","ristor","fuori"]],
+  [/farmaci|medicin|dottore|visita|dentista|analisi|fisioterap|ticket sanitario/, ["medico","salute","farmac"]],
+  [/autostrada|pedaggio|telepass|parcheggi|\bpark\b/,              ["autostrad","parcheggi","pedagg"]],
+  [/\bluce\b|energia elettrica|elettricit|bolletta luce/,          ["elettricit","luce"]],
+  [/\bgas\b|metano|bombola|\bgpl\b/,                               ["gas","metano"]],
+  [/\bacqua\b/,                                                    ["acqua"]],
+  [/netflix|telefon|cellulare|internet|fibra|spotify|abbonament|\bsim\b/, ["tel ","telefon","internet","abbonament","netflix"]],
+  [/regal/,                                                        ["regal"]],
+  [/assicurazion|\bbollo\b|rc auto/,                               ["assicuraz","bollo"]],
+  [/meccanico|tagliando|gomme|riparazion|manutenzion/,             ["riparazion","manutenzion","gomme"]],
+  [/condominio|affitto|mutuo|rata casa/,                           ["condominio","affitto","mutuo"]],
+  [/pulizi|stirat|\bcolf\b/,                                       ["pulizia","stirat"]],
+  [/vestit|abbigliament|scarpe|shopping/,                          ["shopping","abbigliament"]],
+  [/parrucchier|barbiere|estetist/,                                ["cura personale","parrucchier"]],
+  [/\bvolo\b|aereo|hotel|albergo|vacanz|viaggio|treno|nave|traghetto/, ["viagg","vacanz","nave","aereo","volo"]],
+  [/commission|canone carta|spese banca|bollo conto/,              ["banca","finanziari","commission"]],
+  [/\bimu\b|\btari\b|rifiuti|tassa|tasse/,                         ["tasse","rifiuti","imu"]],
+  [/scuola|università|libri scolastici|retta/,                     ["scuola","istruzion"]],
+];
+
+/* Cerca la coppia categoria/sottocategoria più adatta alla frase, usando solo
+   le voci realmente presenti nei dati dell'utente. */
+function trovaVoce(testo, cats){
+  const t = " " + testo.toLowerCase() + " ";
+  let frammenti = null;
+  for (const [re, fr] of CONCETTI) if (re.test(t)) { frammenti = fr; break; }
+  if (!frammenti) return null;
+
+  // tutte le coppie le cui sottocategorie contengono uno dei frammenti
+  const candidate = [];
+  Object.keys(cats).forEach(c => cats[c].forEach(s => {
+    const sl = s.toLowerCase();
+    if (frammenti.some(f => sl.includes(f))) candidate.push({ cat:c, sub:s });
+  }));
+  if (!candidate.length) return null;
+  if (candidate.length === 1) return candidate[0];
+
+  // più categorie hanno quella sottocategoria: decide chi è nominato nella frase
+  // (il nome della categoria stessa: un luogo, una persona, una casa…)
+  const parole = t.split(/[^a-zàèéìòù0-9]+/).filter(w => w.length > 3);
+  const usi = frequenzaCoppie();
+  const desc = descrizioniPerVoce();
+  let migliore = null, punteggio = -1;
+  candidate.forEach(k => {
+    const chiave = k.cat + "|" + k.sub;
+    let p = 0;
+    // 1) la frase nomina la categoria stessa (un luogo, una persona, una casa)
+    const cl = k.cat.toLowerCase();
+    parole.forEach(w => { if (cl.includes(w)) p += 100 + w.length; });
+    // 2) la frase usa parole già comparse nelle descrizioni di quella voce:
+    //    così nomi di paesi, negozi o persone si imparano dai dati, non dal codice
+    const testi = desc[chiave] || "";
+    parole.forEach(w => { if (testi.includes(w)) p += 30 + w.length; });
+    // 3) a parità, vince la voce che usi più spesso
+    p += Math.min(20, usi[chiave] || 0);
+    if (p > punteggio) { punteggio = p; migliore = k; }
+  });
+  return migliore;
+}
+
+/* Tutte le descrizioni già usate, raccolte per coppia categoria|sottocategoria. */
+let cacheDescrizioni = null;
+function descrizioniPerVoce(){
+  if (cacheDescrizioni) return cacheDescrizioni;
+  const d = {};
+  (riepilogo && riepilogo.dettaglio || []).forEach(v => {
+    if (!v.desc) return;
+    const k = v.cat + "|" + v.sub;
+    d[k] = (d[k] || "") + " " + v.desc.toLowerCase();
+  });
+  [...storico, ...coda].forEach(v => {
+    if (!v.descrizione) return;
+    const k = v.categoria + "|" + v.sottocategoria;
+    d[k] = (d[k] || "") + " " + v.descrizione.toLowerCase();
+  });
+  cacheDescrizioni = d;
+  return d;
+}
+
+function frequenzaCoppie(){
+  const c = {};
+  (riepilogo && riepilogo.dettaglio || []).forEach(v => { const k=v.cat+"|"+v.sub; c[k]=(c[k]||0)+1; });
+  [...storico, ...coda].forEach(v => { const k=v.categoria+"|"+v.sottocategoria; c[k]=(c[k]||0)+2; });
+  return c;
+}
+
+/* Categorie di entrata: ricavate dai dati, non scritte nel codice. */
+function categorieEntrata(){
+  const bil = {};
+  (riepilogo && riepilogo.voci || []).forEach(v => {
+    bil[v.cat] = bil[v.cat] || { In:0, Out:0 };
+    bil[v.cat][v.inout] += v.valore;
+  });
+  return Object.keys(bil).filter(c => bil[c].In > bil[c].Out);
+}
+
 /* ---------- interprete locale della frase ---------- */
-const NUMERI = {zero:0,uno:1,una:1,due:2,tre:3,quattro:4,cinque:5,sei:6,sette:7,otto:8,nove:9,dieci:10,
-  undici:11,dodici:12,tredici:13,quattordici:14,quindici:15,sedici:16,diciassette:17,diciotto:18,diciannove:19,
-  venti:20,trenta:30,quaranta:40,cinquanta:50,sessanta:60,settanta:70,ottanta:80,novanta:90,cento:100,mille:1000};
-function numeroDaParole(testo){
-  // "sessanta e ottantasei" / "settantacinque zero uno" → prova a ricostruire
-  const p = testo.toLowerCase().replace(/[^a-zàèéìòù ]/g," ").split(/\s+/).filter(Boolean);
-  let tot=null, corrente=0, visto=false;
-  for (const w of p){
-    let v = NUMERI[w];
-    if (v === undefined) {
-      // parole composte tipo "settantacinque", "ottantasei"
-      for (const [d,n] of Object.entries(NUMERI)) {
-        if (n>=20 && n<100 && w.startsWith(d.slice(0,-1))) {
-          const resto = w.slice(d.length-1) || w.slice(d.length);
-          const u = NUMERI[resto];
-          if (u!==undefined && u<10) { v = n+u; break; }
-          if (w === d) { v = n; break; }
-        }
-      }
-    }
-    if (v !== undefined) { corrente += v; visto = true; }
-    else if (visto) { if(tot===null) tot=corrente; corrente=0; visto=false; }
+const UNITA  = {zero:0,uno:1,un:1,una:1,due:2,tre:3,quattro:4,cinque:5,sei:6,sette:7,otto:8,nove:9};
+const DIECI  = {dieci:10,undici:11,dodici:12,tredici:13,quattordici:14,quindici:15,sedici:16,
+                diciassette:17,diciotto:18,diciannove:19};
+const DECINE = {venti:20,trenta:30,quaranta:40,cinquanta:50,sessanta:60,settanta:70,ottanta:80,novanta:90};
+const senzaAccenti = (w) => w.replace(/[àá]/g,"a").replace(/[èé]/g,"e").replace(/[ìí]/g,"i")
+                             .replace(/[òó]/g,"o").replace(/[ùú]/g,"u");
+
+/* Una parola sola, anche composta: "centotrentatre", "duemilacinquecento", "ventotto". */
+function parolaNumero(w){
+  w = senzaAccenti(w);
+  if (!w) return null;
+  if (w in UNITA)  return UNITA[w];
+  if (w in DIECI)  return DIECI[w];
+  if (w in DECINE) return DECINE[w];
+  let i = w.indexOf("mila");
+  if (i > 0) { const a = parolaNumero(w.slice(0,i)); if (a===null) return null;
+               const b = w.slice(i+4); return a*1000 + (b ? (parolaNumero(b)||0) : 0); }
+  if (w.startsWith("mille")) { const b = w.slice(5); return 1000 + (b ? (parolaNumero(b)||0) : 0); }
+  i = w.indexOf("cento");
+  if (i >= 0) { const a = i===0 ? 1 : parolaNumero(w.slice(0,i)); if (a===null) return null;
+                const b = w.slice(i+5); return a*100 + (b ? (parolaNumero(b)||0) : 0); }
+  for (const d in DECINE) {
+    if (w.startsWith(d)) { const b = w.slice(d.length);
+      if (!b) return DECINE[d];
+      const u = parolaNumero(b); if (u!==null && u<10) return DECINE[d]+u; }
+    const radice = d.slice(0,-1);                      // elisione: ventuno, trentotto
+    if (w.startsWith(radice)) { const b = w.slice(radice.length);
+      const u = parolaNumero(b); if (u===1 || u===8) return DECINE[d]+u; }
   }
-  if (visto) { if(tot===null) tot=corrente; else return tot + corrente/100; }
-  return tot;
+  return null;
+}
+
+/* "centotrentatré e cinquanta" → 133,50 · "settantacinque zero uno" → 75,01 */
+function numeroDaParole(testo){
+  const SEP = {e:1,ed:1,virgola:1,con:1};
+  const p = senzaAccenti(testo.toLowerCase()).replace(/[^a-z ]/g," ").split(/\s+/).filter(Boolean);
+  const gruppi = []; let corrente = null, separato = false;
+  for (const w of p){
+    const v = parolaNumero(w);
+    if (v !== null) { if (!corrente) corrente = {cifre:[v], sep:separato}; else corrente.cifre.push(v); separato = false; }
+    else { if (corrente) { gruppi.push(corrente); corrente = null; } separato = !!SEP[w]; }
+  }
+  if (corrente) gruppi.push(corrente);
+  if (!gruppi.length) return null;
+
+  const valore = (g) => {
+    const c = g.cifre;
+    if (c.length === 1) return c[0];
+    const coda = [];                                   // cifre finali sotto il dieci = centesimi
+    for (let i=c.length-1; i>0 && c[i]<10; i--) coda.unshift(c[i]);
+    if (coda.length >= 2) return c[0] + parseInt(coda.join(""),10)/100;
+    return c.reduce((a,b)=>a+b,0);
+  };
+
+  let tot = valore(gruppi[0]);
+  for (let i=1;i<gruppi.length;i++){
+    const v = valore(gruppi[i]);
+    if (gruppi[i].sep && v < 100)      tot = tot + v/100;   // "e cinquanta" → centesimi
+    else if (gruppi[i].sep && v < tot) tot = tot + v;       // "mille e duecento"
+    else                               tot = Math.max(tot, v);
+  }
+  return Math.round(tot*100)/100;
 }
 function interpreta(testo){
   const t = " " + testo.toLowerCase().trim() + " ";
   const r = { valore:null, data:oggiISO(), categoria:"", sottocategoria:"", pagamento:"",
               descrizione:testo.trim(), inout:"Out", quotaTicket:null };
 
+  // euro e centesimi dettati staccati: "133 50 euro", "133 e 50 euro", "133 virgola 50"
+  let presoInCifre = false;
+  if (!/ticket|buoni pasto/.test(t)) {
+    const sp = t.match(/\b(\d{1,6})\s+(?:e\s+|virgola\s+)?(\d{2})\s*(?:€|euro)\b/);
+    if (sp) { r.valore = parseFloat(sp[1] + "." + sp[2]); presoInCifre = true; }
+  }
   // importo in cifre: 60,86 / 60.86 / 60
-  const cifre = t.match(/(\d+[.,]\d{1,2}|\d+)\s*(?:€|euro)?/g);
+  const cifre = presoInCifre ? null : t.match(/(\d+[.,]\d{1,2}|\d+)\s*(?:€|euro)?/g);
   if (cifre && cifre.length) {
     const valori = cifre.map(x => importoDaTesto(x.replace(/[^\d.,]/g,""))).filter(v => v!==null && v>0);
     if (valori.length) r.valore = Math.max(...valori);
@@ -248,33 +401,11 @@ function interpreta(testo){
     [/addebito|rid\b|domicil/,"Addebito banca"]];
   for (const [re,nome] of mappaPag) if (re.test(t)) { r.pagamento = nome; break; }
 
-  // categoria: prima per parole chiave note, poi per somiglianza con le descrizioni passate
+  // Categoria e sottocategoria: nessun nome personale nel codice. Si parte da
+  // concetti di spesa generici e si cercano fra le TUE voci, lette dal riepilogo.
   const cats = categorie();
-  const chiavi = [
-    [/benzina|carburante|gasolio|rifornimento|distributore/, "Carburante"],
-    [/supermercat|spesa|esselunga|coop|lidl|md\b|conad|carrefour/, "Spesa/Cibo"],
-    [/pranzo|cena|ristorante|pizzeria|bar\b|colazione|caff|sushi/, "Mangiare fuori"],
-    [/farmaci|medicin|dottore|visita|dentista|analisi|ticket sanitario/, "Medico"],
-    [/autostrada|pedaggio|telepass/, "Autostrada"],
-    [/luce|enel|elettricit/, "Elettricità"],
-    [/gas\b|metano|bombola/, "Gas"],
-    [/acqua\b/, "Acqua"],
-    [/netflix|telefon|cellulare|internet|fibra|spotify|abbonament/, "Tel fisso / cell / iPad / pc / netflix"],
-    [/regal/, "Regali"],
-    [/benzina elettric|ricarica elettr/, "Carburante Elettrico"]
-  ];
-  let subTrovata = "";
-  for (const [re,sub] of chiavi) if (re.test(t)) { subTrovata = sub; break; }
-  if (subTrovata) {
-    // luogo citato per scegliere la categoria giusta fra quelle che hanno quella sottocategoria
-    const candidate = Object.keys(cats).filter(c => cats[c].includes(subTrovata));
-    let scelta = candidate[0] || "";
-    if (/sardegna|gonnesa/.test(t)) scelta = candidate.find(c=>/sardegna/i.test(c)) || scelta;
-    else if (/milano/.test(t)) scelta = candidate.find(c=>/milano/i.test(c)) || scelta;
-    else if (/caravaggio|casa/.test(t)) scelta = candidate.find(c=>/^casa/i.test(c)) || scelta;
-    else if (/letizia/.test(t)) scelta = candidate.find(c=>/letizia/i.test(c)) || scelta;
-    if (scelta) { r.categoria = scelta; r.sottocategoria = subTrovata; }
-  }
+  const coppia = trovaVoce(t, cats);
+  if (coppia) { r.categoria = coppia.cat; r.sottocategoria = coppia.sub; }
   if (!r.categoria) {
     // somiglianza con le descrizioni già usate in passato
     const parole = t.split(/\s+/).filter(w => w.length>3);
@@ -297,7 +428,7 @@ function interpreta(testo){
     r.pagamento = (ab && ab.metodo !== "Ticket Restaurant") ? ab.metodo : "Visa";
   }
   if (!r.pagamento) r.pagamento = CFG.pagamenti[0];
-  if (CFG.catEntrate.includes(r.categoria)) r.inout = "In";
+  if (categorieEntrata().includes(r.categoria)) r.inout = "In";
   return r;
 }
 
@@ -423,6 +554,7 @@ function avviso(testo, errore){
 function salvaSpesa(v){
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
   coda.push(Object.assign({ id, creatoIl:new Date().toISOString(), origine: window.innerWidth<700?"telefono":"pc" }, v));
+  cacheDescrizioni = null;
   scrivi(K.coda, coda);
 }
 
@@ -581,7 +713,7 @@ function schermoNuova(s){
   q("cat").onchange = () => { aggiorna(); bozza.categoria = q("cat").value;
     bozza.sottocategoria = (cats[bozza.categoria]||[])[0] || "";
     const ab = pagamentoAbituale(bozza.categoria, bozza.sottocategoria); if (ab) bozza.pagamento = ab.metodo;
-    bozza.inout = CFG.catEntrate.includes(bozza.categoria) ? "In" : "Out"; disegna(); };
+    bozza.inout = categorieEntrata().includes(bozza.categoria) ? "In" : "Out"; disegna(); };
   q("sub").onchange = () => { aggiorna(); bozza.sottocategoria = q("sub").value;
     const ab = pagamentoAbituale(bozza.categoria, bozza.sottocategoria); if (ab) bozza.pagamento = ab.metodo; disegna(); };
   q("tOut").onclick = () => { aggiorna(); bozza.inout="Out"; disegna(); };
